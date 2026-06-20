@@ -1,0 +1,39 @@
+{
+  "_note": "Maps user-facing ESC protocol names to iNAV CLI set motor_pwm_protocol values. Verified against iNAV 9.x CLI.",
+  "DSHOT600": {
+    "cli_value": "DSHOT600",
+    "is_digital": true,
+    "bidirectional_capable": true,
+    "notes": "Fastest DShot variant. Recommended for F4/F7/H7 FCs with capable ESCs. Enable bidirectional for RPM telemetry and notch filtering."
+  },
+  "DSHOT300": {
+    "cli_value": "DSHOT300",
+    "is_digital": true,
+    "bidirectional_capable": true,
+    "notes": "Digital, half speed of DSHOT600. Better for longer cable runs or slower MCU timers."
+  },
+  "DSHOT150": {
+    "cli_value": "DSHOT150",
+    "is_digital": true,
+    "bidirectional_capable": false,
+    "notes": "Slowest DShot variant. Use only if DSHOT300/600 doesn't work on your hardware."
+  },
+  "MULTISHOT": {
+    "cli_value": "MULTISHOT",
+    "is_digital": false,
+    "bidirectional_capable": false,
+    "notes": "Analog high-speed protocol (25–95µs). No bidirectional/telemetry. Requires MULTISHOT-capable ESCs."
+  },
+  "ONESHOT125": {
+    "cli_value": "ONESHOT125",
+    "is_digital": false,
+    "bidirectional_capable": false,
+    "notes": "Analog (125–250µs). Widely compatible. Good fallback for older ESCs."
+  },
+  "PWM": {
+    "cli_value": "STANDARD",
+    "is_digital": false,
+    "bidirectional_capable": false,
+    "notes": "Standard 1000–2000µs PWM. Universal compatibility. Slowest update rate. Use as a last resort."
+  }
+}

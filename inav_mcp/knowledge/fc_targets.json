@@ -1,0 +1,27 @@
+{
+  "_note": "Sparse hints for known FC targets. Omit rather than guess. Users can fill gaps via cli().",
+  "MATEKF405": {
+    "mcu": "STM32F405",
+    "notes": "Popular F4 FC. DSHOT600 works on all motor outputs. Good UART count."
+  },
+  "MATEKF722": {
+    "mcu": "STM32F722",
+    "notes": "F7 FC. DSHOT600 on all outputs. Supports bidirectional DSHOT."
+  },
+  "MATEKH743": {
+    "mcu": "STM32H743",
+    "notes": "H7 FC. Fast, high UART count. Full DSHOT600 bidirectional support."
+  },
+  "SPEEDYBEEF405WING": {
+    "mcu": "STM32F405",
+    "notes": "Fixed-wing focused F4 board. Good servo output count. DSHOT on motor outputs."
+  },
+  "IFLIGHT_BLITZ_F7": {
+    "mcu": "STM32F745",
+    "notes": "F7 stack FC. DSHOT600 capable."
+  },
+  "TBS_LUCID_H7": {
+    "mcu": "STM32H7",
+    "notes": "FC in the TBS Chupito flying-wing kit. H7 class, full DSHOT support (DSHOT300 in stock TBS config). Stock Chupito tune ships on iNAV 8.x as an AIRPLANE/elevon wing."
+  }
+}

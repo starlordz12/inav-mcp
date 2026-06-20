@@ -1,0 +1,160 @@
+{
+  "_source": "iNAV Configurator 9.0.2 — app-9.0.2/resources/app/.vite/renderer/main_window/assets/index-Cu-IIg1k.js updateStatusBar(). The 32-bit field from MSP_STATUS @14 is the OR of armingFlags (state bits) and armingDisableFlags (reason bits).",
+  "_note": "Bit 2 (4)=ARMED, bit 4 (16)=SIMULATOR_MODE are state bits, not disable reasons. Bit 17 (BOXKILLSWITCH) was removed in iNAV 9.x. Bits 0-1, 3, 5 are unused.",
+  "2": {
+    "name": "ARMED",
+    "severity": "info",
+    "reason": "The FC is currently ARMED. This is shown here for completeness — it is not an arming-prevention flag.",
+    "fix": "Disarm the aircraft before making configuration changes."
+  },
+  "4": {
+    "name": "SIMULATOR_MODE",
+    "severity": "info",
+    "reason": "The FC is in simulator mode.",
+    "fix": "Exit simulator mode before arming for real flight."
+  },
+  "6": {
+    "name": "ARMING_DISABLED_GEOZONE",
+    "severity": "error",
+    "reason": "A geofence zone is active that prevents arming in this location.",
+    "fix": "Disable geofencing or move the aircraft to a permitted zone before arming."
+  },
+  "7": {
+    "name": "ARMING_DISABLED_FAILSAFE_SYSTEM",
+    "severity": "critical",
+    "reason": "Failsafe is active. The FC has lost RC signal or a failsafe condition was triggered by the system.",
+    "fix": "Check your receiver is powered, bound, and transmitting. Verify the UART port and protocol (SBUS/CRSF/etc.) in the Ports tab. Ensure the TX is on."
+  },
+  "8": {
+    "name": "ARMING_DISABLED_NOT_LEVEL",
+    "severity": "error",
+    "reason": "The board is not level at rest (roll/pitch outside the allowed threshold).",
+    "fix": "Set the FC flat on a level surface and calibrate the accelerometer in the Setup tab of iNAV Configurator. Also check 'board_align_roll/pitch/yaw' if the FC is mounted at an angle."
+  },
+  "9": {
+    "name": "ARMING_DISABLED_SENSORS_CALIBRATING",
+    "severity": "warning",
+    "reason": "Sensors (gyro/acc) are still calibrating on boot.",
+    "fix": "Wait a few seconds for calibration to complete. Keep the aircraft still on a flat surface immediately after powering on."
+  },
+  "10": {
+    "name": "ARMING_DISABLED_SYSTEM_OVERLOADED",
+    "severity": "error",
+    "reason": "CPU load is too high. The scheduler is overloaded and cannot guarantee safe flight loop timing.",
+    "fix": "Reduce enabled features (GPS, logging, OSD, telemetry) to lower CPU load. Check 'tasks' output. Consider a faster FC target."
+  },
+  "11": {
+    "name": "ARMING_DISABLED_NAVIGATION_UNSAFE",
+    "severity": "error",
+    "reason": "A navigation mode is active or configured but GPS is not ready (no 3D fix, or GPS not configured).",
+    "fix": "Wait for a 3D GPS fix with 6+ satellites before arming with nav modes. If you don't have GPS, disable nav-related features and modes."
+  },
+  "12": {
+    "name": "ARMING_DISABLED_COMPASS_NOT_CALIBRATED",
+    "severity": "error",
+    "reason": "Compass (magnetometer) is detected but has not been calibrated.",
+    "fix": "Calibrate the compass in the Setup tab of iNAV Configurator. If you don't have or need a compass, disable it with 'set mag_hardware = NONE'."
+  },
+  "13": {
+    "name": "ARMING_DISABLED_ACCELEROMETER_NOT_CALIBRATED",
+    "severity": "error",
+    "reason": "Accelerometer has not been calibrated, or calibration data is missing/corrupt.",
+    "fix": "Place the aircraft level and click 'Calibrate Accelerometer' in the Setup tab of iNAV Configurator."
+  },
+  "14": {
+    "name": "ARMING_DISABLED_ARM_SWITCH",
+    "severity": "info",
+    "reason": "The ARM switch is not in the correct position, or no ARM mode is assigned to a switch.",
+    "fix": "Toggle your ARM switch to the ARM position. If no ARM switch is configured, use assign_switch() or set_flight_mode('ARM', ...) to add one."
+  },
+  "15": {
+    "name": "ARMING_DISABLED_HARDWARE_FAILURE",
+    "severity": "critical",
+    "reason": "A hardware sensor has been detected as failing or unavailable.",
+    "fix": "Run read_sensors() to see which sensor is unhealthy. Check the sensor's wiring and connection. A factory reset (defaults) may help if EEPROM is corrupt."
+  },
+  "16": {
+    "name": "ARMING_DISABLED_BOXFAILSAFE",
+    "severity": "error",
+    "reason": "Failsafe mode is active via a switch (BOXFAILSAFE assigned to a switch that is currently active).",
+    "fix": "Move the FAILSAFE switch to its off/inactive position, or remove the FAILSAFE mode assignment if it was assigned accidentally."
+  },
+  "18": {
+    "name": "ARMING_DISABLED_RC_LINK",
+    "severity": "critical",
+    "reason": "No RC signal is being received. The receiver is not sending valid channel data.",
+    "fix": "Check: (1) TX is on and bound, (2) receiver is powered, (3) correct serial protocol configured in Ports tab (SBUS/CRSF/etc.), (4) correct channel map ('rxfail' CLI command for details)."
+  },
+  "19": {
+    "name": "ARMING_DISABLED_THROTTLE",
+    "severity": "warning",
+    "reason": "Throttle channel is not at minimum position.",
+    "fix": "Push the throttle stick all the way to the bottom before arming. Check 'min_throttle' setting matches your ESC's low-throttle PWM."
+  },
+  "20": {
+    "name": "ARMING_DISABLED_CLI",
+    "severity": "info",
+    "reason": "CLI mode is currently active. The FC will not arm while you are connected via CLI.",
+    "fix": "Exit the CLI (type 'exit' or disconnect the MCP server). The FC will return to normal operation."
+  },
+  "21": {
+    "name": "ARMING_DISABLED_CMS_MENU",
+    "severity": "info",
+    "reason": "CMS (OSD menu system) is currently open.",
+    "fix": "Exit the CMS menu on your OSD."
+  },
+  "22": {
+    "name": "ARMING_DISABLED_OSD_MENU",
+    "severity": "info",
+    "reason": "OSD menu is currently open.",
+    "fix": "Exit the OSD menu."
+  },
+  "23": {
+    "name": "ARMING_DISABLED_ROLLPITCH_NOT_CENTERED",
+    "severity": "warning",
+    "reason": "Roll and/or pitch sticks are not centered. Some configurations require centered sticks to arm.",
+    "fix": "Center your roll and pitch sticks. Check transmitter trim and stick calibration."
+  },
+  "24": {
+    "name": "ARMING_DISABLED_SERVO_AUTOTRIM",
+    "severity": "info",
+    "reason": "Servo autotrim is currently running.",
+    "fix": "Wait for servo autotrim to complete, or toggle the AUTOTRIM switch off."
+  },
+  "25": {
+    "name": "ARMING_DISABLED_OOM",
+    "severity": "critical",
+    "reason": "Out of memory — the FC has run out of heap memory.",
+    "fix": "Disable features to reduce memory usage. Flash a clean firmware build. This usually indicates a serious configuration problem."
+  },
+  "26": {
+    "name": "ARMING_DISABLED_INVALID_SETTING",
+    "severity": "error",
+    "reason": "An invalid parameter setting was detected in the configuration.",
+    "fix": "Check the CLI for 'Invalid setting' errors. Run 'diff all' and look for suspicious values. A 'defaults' followed by reconfiguration may be needed."
+  },
+  "27": {
+    "name": "ARMING_DISABLED_PWM_OUTPUT_ERROR",
+    "severity": "error",
+    "reason": "A PWM output has a configuration error (pin conflict, timer conflict, or missing servo/motor assignment).",
+    "fix": "Check motor and servo output assignments in the Motors/Servos tab. Verify timer allocation in the Resource tab."
+  },
+  "28": {
+    "name": "ARMING_DISABLED_NO_PREARM",
+    "severity": "error",
+    "reason": "Prearm switch is required but not active. PREARM mode is configured but the prearm switch is not in the armed position.",
+    "fix": "Activate the prearm switch before arming, or remove the PREARM mode assignment if it is not needed."
+  },
+  "29": {
+    "name": "ARMING_DISABLED_DSHOT_BEEPER",
+    "severity": "info",
+    "reason": "DShot beeper command is currently active, preventing arming.",
+    "fix": "Wait for the beeper sequence to complete, or deactivate the beeper command."
+  },
+  "30": {
+    "name": "ARMING_DISABLED_LANDING_DETECTED",
+    "severity": "info",
+    "reason": "Landing detector is active — the FC thinks the aircraft just landed.",
+    "fix": "Wait a moment for the landing detector to clear. If this persists on the bench, check landing detection settings."
+  }
+}

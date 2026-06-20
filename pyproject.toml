@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inav-mcp"
+version = "0.1.0"
+description = "MCP server for iNAV flight-controller configuration and diagnostics"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+inav-mcp = "inav_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inav_mcp*"]
+
+[tool.setuptools.package-data]
+inav_mcp = ["knowledge/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v"

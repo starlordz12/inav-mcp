@@ -1,0 +1,113 @@
+{
+  "_source": "iNAV docs + src/main/fc/box.c. Fixed-wing relevance noted.",
+  "ARM": {
+    "description": "Arms the flight controller, enabling motor output.",
+    "fixed_wing": "essential",
+    "notes": "Must be assigned to a dedicated switch. FC will not arm without this."
+  },
+  "ANGLE": {
+    "description": "Self-levelling mode — FC corrects roll/pitch to return to level. Accelerometer required.",
+    "fixed_wing": "primary",
+    "notes": "Most beginner-friendly mode. Good for FPV wings. Requires ACC calibration."
+  },
+  "HORIZON": {
+    "description": "Self-levelling near centre, allows full stick deflection for aerobatics.",
+    "fixed_wing": "optional",
+    "notes": "Mix of ANGLE and MANUAL. Returns to level when sticks are centered."
+  },
+  "MANUAL": {
+    "description": "Full manual / passthrough — no stabilisation. Pilot controls servos directly.",
+    "fixed_wing": "essential",
+    "notes": "Needed for maiden flights to check servo directions without gyro interference."
+  },
+  "NAV ALTHOLD": {
+    "description": "Altitude hold — FC maintains current altitude using baro/GPS.",
+    "fixed_wing": "optional",
+    "notes": "Requires baro and/or GPS. Throttle stick controls target altitude."
+  },
+  "NAV POSHOLD": {
+    "description": "Position hold — FC maintains current GPS position.",
+    "fixed_wing": "limited",
+    "notes": "Fixed-wing position hold is a loiter. Requires GPS 3D fix."
+  },
+  "NAV RTH": {
+    "description": "Return to Home — FC navigates back to launch point and lands/loiters.",
+    "fixed_wing": "highly recommended",
+    "notes": "Requires GPS. Set 'nav_rth_altitude' appropriately for your flying area."
+  },
+  "NAV WP": {
+    "description": "Waypoint navigation — flies a pre-loaded mission.",
+    "fixed_wing": "optional",
+    "notes": "Requires GPS and a mission uploaded via Configurator or GCS."
+  },
+  "FAILSAFE": {
+    "description": "Forces failsafe action immediately when the switch is active.",
+    "fixed_wing": "caution",
+    "notes": "Useful for testing failsafe behaviour. Do not leave accidentally assigned."
+  },
+  "HEADING HOLD": {
+    "description": "Maintains the current magnetic heading (yaw hold).",
+    "fixed_wing": "optional",
+    "notes": "Requires compass. Useful for long-range FPV."
+  },
+  "HEADFREE": {
+    "description": "Headfree / carefree mode — stick directions are relative to pilot, not aircraft.",
+    "fixed_wing": "rare",
+    "notes": "Not commonly used on fixed wing."
+  },
+  "TURN ASSIST": {
+    "description": "Coordinated-turn assistance — automates rudder during banked turns.",
+    "fixed_wing": "recommended",
+    "notes": "Makes flying a conventional fixed wing easier. Set 'fw_turn_assist_yaw_gain'."
+  },
+  "SERVO AUTOTRIM": {
+    "description": "Automatically trims servos during straight-and-level flight.",
+    "fixed_wing": "useful",
+    "notes": "Activate for a few seconds in level flight to auto-trim. Saves to config."
+  },
+  "OSD SW": {
+    "description": "Toggle OSD display on/off.",
+    "fixed_wing": "optional",
+    "notes": "Useful if you want to hide OSD for recording."
+  },
+  "BEEPER": {
+    "description": "Activates the FC buzzer to help locate a lost model.",
+    "fixed_wing": "recommended",
+    "notes": "Assign to a switch for lost-model finder functionality."
+  },
+  "KILLSWITCH": {
+    "description": "Immediately disarms and kills motor output.",
+    "fixed_wing": "safety",
+    "notes": "Emergency stop. Use with care — activating in flight will crash the aircraft."
+  },
+  "LOITER CHANGE": {
+    "description": "Change loiter direction in fixed-wing loiter/poshold.",
+    "fixed_wing": "optional",
+    "notes": "Switches the loiter circle direction."
+  },
+  "NAV CRUISE": {
+    "description": "Cruise control — maintains speed and heading without pilot input.",
+    "fixed_wing": "advanced",
+    "notes": "Requires GPS and pitot tube for accurate airspeed."
+  },
+  "AUTO TUNE": {
+    "description": "Automatic PID tuning mode.",
+    "fixed_wing": "advanced",
+    "notes": "Fly in a safe area with plenty of altitude. Requires stable conditions."
+  },
+  "BRAKING": {
+    "description": "Increases drag to slow the aircraft in GPS-assisted modes.",
+    "fixed_wing": "N/A",
+    "notes": "Primarily for multirotors."
+  },
+  "NAV LAUNCH": {
+    "description": "Hand-launch detection — waits for throw, then applies motor/elevator.",
+    "fixed_wing": "recommended",
+    "notes": "Great for flying wings without landing gear. Configure 'nav_fw_launch_*' settings."
+  },
+  "CAMSTAB": {
+    "description": "Camera stabilisation — uses gimbal outputs to level a camera mount.",
+    "fixed_wing": "optional",
+    "notes": "Requires configured gimbal servo outputs."
+  }
+}

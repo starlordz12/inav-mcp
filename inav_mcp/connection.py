@@ -14,6 +14,60 @@ from .cli import strip_cli_response
 # Max bytes we'll buffer while waiting for the CLI prompt before giving up.
 _CLI_MAX_BYTES = 128 * 1024  # 128 KB is plenty for a full `dump all`
 
+# Substrings that mark a USB-serial / CDC device worth probing for an FC after a
+# reboot (kept in sync with server._FC_PORT_HINTS — duplicated here to avoid a
+# circular import: server imports connection, not the other way round).
+_FC_SERIAL_HINTS = ("USB", "STM", "CP210", "CH340", "CDC", "VCP", "ACM", "SERIAL")
+
+# Substrings/USB-PID text that mark an STM32 sitting in DFU (bootloader) mode.
+# The iNAV USB VCP is VID:PID 0483:5740; the DFU bootloader is 0483:DF11 and
+# usually shows up as "STM32 BOOTLOADER" / "DFU in FS Mode". A board in DFU has
+# dropped off USB-serial entirely — MSP can't reach it and it needs a power-cycle.
+_DFU_HINTS = ("BOOTLOADER", "DFU", "DF11")
+
+
+def _enumerate_ports() -> list[dict]:
+    """Enumerate serial ports as plain dicts. Isolated for testability."""
+    from serial.tools.list_ports import comports
+    return [
+        {"device": p.device, "description": p.description or "", "hwid": p.hwid or ""}
+        for p in comports()
+    ]
+
+
+def port_in_dfu(ports: list[dict]) -> dict | None:
+    """Return the first port that looks like an STM32 in DFU/bootloader mode, else None.
+
+    `ports` is a list of {"device", "description", "hwid"} dicts (as from
+    _enumerate_ports). A match means the FC re-enumerated as a bootloader device
+    instead of coming back as its USB-serial port — the user must power-cycle it.
+    """
+    for p in ports:
+        blob = f"{p.get('description', '')} {p.get('hwid', '')}".upper()
+        if any(h in blob for h in _DFU_HINTS):
+            return p
+    return None
+
+
+def fc_serial_candidates(ports: list[dict], original_port: str) -> list[str]:
+    """Ordered list of ports to retry after a reboot: original first, then any other
+    USB-serial-looking device the FC may have re-enumerated as.
+
+    DFU/bootloader devices are excluded — they don't speak MSP. Pure function
+    (ports injected) so the re-enumeration logic is unit-testable offline.
+    """
+    candidates = [original_port]
+    for p in ports:
+        dev = p.get("device")
+        if not dev or dev == original_port:
+            continue
+        blob = f"{p.get('description', '')} {p.get('hwid', '')}".upper()
+        if any(h in blob for h in _DFU_HINTS):
+            continue   # bootloader device — can't MSP it
+        if any(h in blob for h in _FC_SERIAL_HINTS):
+            candidates.append(dev)
+    return candidates
+
 
 class SerialConnection:
     def __init__(self, port: str, baud: int = 115200) -> None:
@@ -45,45 +99,95 @@ class SerialConnection:
         self._ser = None
         self.mode  = "IDLE"
 
-    def reconnect(self, settle_timeout: float = 15.0) -> bool:
-        """Close and reopen the port after an FC reboot, polling until MSP responds.
-
-        iNAV's CLI `exit`/`save` both reboot the FC, which re-enumerates the USB
-        VCP (~7s to answer MSP again). Call this after any CLI session to restore a
-        usable MSP connection. Returns True once MSP_API_VERSION answers.
+    def _try_msp_handshake(self, device: str) -> bool:
+        """Open `device` and probe MSP_API_VERSION once. On success, leave the handle
+        open and MSP-ready and return True; otherwise close it and return False.
         """
         from .msp import MSP_API_VERSION
+        try:
+            self._ser = serial.Serial(
+                port=device, baudrate=self.baud,
+                timeout=0.5, write_timeout=1.0,
+            )
+            self.mode  = "MSP"
+            self.stale = False
+            time.sleep(0.1)
+            self._ser.reset_input_buffer()
+            self._ser.write(encode_v1(MSP_API_VERSION))
+            time.sleep(0.2)
+            frame = self._read_msp_frame(timeout=0.8)
+            decode_v1_response(frame)
+            return True
+        except Exception:
+            if self._ser and self._ser.is_open:
+                try:
+                    self._ser.close()
+                except Exception:
+                    pass
+            self._ser = None
+            return False
+
+    def reconnect(self, settle_timeout: float = 15.0, initial_settle: float = 1.0) -> float:
+        """Close and reopen the port after an FC reboot, polling until MSP responds.
+
+        iNAV's CLI `exit`/`save` both reboot the FC, which drops the USB VCP and
+        re-enumerates it (~7s to answer MSP again). Call this after any CLI session
+        to restore a usable MSP connection. Returns the elapsed reconnect time in
+        seconds (so callers can surface/measure the per-reboot cost).
+
+        Hardening over a naive "reopen the same port" loop:
+          1. A short `initial_settle` before the first probe — hammering the port
+             while the MCU is still resetting wastes attempts, and rapid reconnect
+             churn is itself a suspected trigger for the board dropping into DFU.
+          2. Exponential-ish backoff between attempts instead of a flat 0.5s.
+          3. Re-enumeration awareness: if the original port doesn't return, scan
+             OTHER USB-serial ports (the FC may have come back as a different COM
+             device) and adopt the one that answers MSP — updating self.port.
+          4. DFU detection: if it gives up, distinguish "board is in the STM32
+             bootloader, power-cycle it" from a merely-slow board.
+        """
+        original_port = self.port
         self.close()
-        deadline = time.monotonic() + settle_timeout
+        t0 = time.monotonic()
+        time.sleep(initial_settle)
+
+        deadline = t0 + settle_timeout
+        # Only fan out to other ports once the original is clearly not coming back,
+        # to keep the common case (same port returns) fast.
+        scan_others_after = time.monotonic() + min(5.0, settle_timeout / 2)
+        backoff = 0.5
         while time.monotonic() < deadline:
-            try:
-                self._ser = serial.Serial(
-                    port=self.port, baudrate=self.baud,
-                    timeout=0.5, write_timeout=1.0,
-                )
-                self.mode  = "MSP"
-                self.stale = False
-                time.sleep(0.1)
-                self._ser.reset_input_buffer()
-                # Probe MSP readiness.
-                self._ser.write(encode_v1(MSP_API_VERSION))
-                time.sleep(0.2)
-                frame = self._read_msp_frame(timeout=0.8)
-                decode_v1_response(frame)
-                return True
-            except Exception:
-                # Not ready yet — close and retry.
-                if self._ser and self._ser.is_open:
-                    try:
-                        self._ser.close()
-                    except Exception:
-                        pass
-                self._ser = None
-                time.sleep(0.5)
+            if self._try_msp_handshake(original_port):
+                self.port = original_port
+                return time.monotonic() - t0
+
+            if time.monotonic() >= scan_others_after:
+                for cand in fc_serial_candidates(_enumerate_ports(), original_port):
+                    if cand == original_port:
+                        continue
+                    if self._try_msp_handshake(cand):
+                        self.port = cand
+                        return time.monotonic() - t0
+
+            time.sleep(backoff)
+            backoff = min(backoff * 1.5, 2.0)
+
+        # Gave up — give the caller an actionable reason.
         self.mode = "IDLE"
+        dfu = port_in_dfu(_enumerate_ports())
+        if dfu:
+            raise ConnectionError(
+                f"FC did not return on USB-serial and a device is in STM32 "
+                f"DFU/bootloader mode ({dfu['device']}: {dfu['description'] or 'STM32 BOOTLOADER'}). "
+                "The board dropped into its bootloader — POWER-CYCLE it (unplug/replug "
+                "USB), then reconnect. Rapid back-to-back CLI reboots can trigger this; "
+                "batch commands with cli_batch() to cut reboot churn."
+            )
         raise TimeoutError(
-            f"FC did not respond to MSP within {settle_timeout:.0f}s after reboot. "
-            "It may need more time, or re-enumerated as a different COM port."
+            f"FC did not respond to MSP within {settle_timeout:.0f}s after reboot "
+            f"(original port {original_port}). It may need more time, re-enumerated as "
+            "a different COM port, or dropped into DFU/bootloader mode — check for an "
+            "'STM32 BOOTLOADER' device and power-cycle the board if so."
         )
 
     def is_open(self) -> bool:
@@ -293,7 +397,7 @@ class SerialConnection:
         raw = self._read_until_prompt(timeout=timeout)
         return strip_cli_response(cmd, raw)
 
-    def exit_cli(self, save: bool = False, reconnect: bool = False) -> None:
+    def exit_cli(self, save: bool = False, reconnect: bool = False) -> float | None:
         """Leave CLI mode. On iNAV, BOTH paths reboot the FC.
 
         save=False → 'exit'  : discards unsaved changes, then reboots.
@@ -301,14 +405,15 @@ class SerialConnection:
 
         Because the FC reboots and the USB VCP re-enumerates, the current handle
         becomes invalid. The connection is marked stale. If reconnect=True, we poll
-        the port back to a usable MSP state (~7s); otherwise the caller must
-        reconnect() before further use.
+        the port back to a usable MSP state (~7s) and return the elapsed reconnect
+        seconds (the measured reboot cost); otherwise the caller must reconnect()
+        before further use and None is returned.
 
         NOTE: 'exit' DISCARDS any `set`/`aux`/etc. changes made in this session —
         only `save` makes CLI writes stick.
         """
         if self.mode != "CLI":
-            return
+            return None
 
         cmd = b"save\r" if save else b"exit\r"
         try:
@@ -320,4 +425,5 @@ class SerialConnection:
         time.sleep(0.3)   # let the reboot begin
 
         if reconnect:
-            self.reconnect()
+            return self.reconnect()
+        return None

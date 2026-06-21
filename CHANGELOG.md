@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-21
+
+Distribution & polish release — first version published to PyPI. No functional or
+runtime changes to the server (still 35 tools, 186 offline tests); the focus is
+making the project easy to install and adopt now that it's public.
+
+### Added
+- **PyPI packaging & release automation:** a `publish.yml` workflow that builds
+  and uploads to PyPI via Trusted Publishing (OIDC — no stored API token),
+  triggered when a GitHub Release is published. `pip install inav-mcp` is now the
+  recommended install path.
+- README **demo** (`assets/demo.svg`) of a "why won't it arm" session, a PyPI
+  version badge, and a "try it without a flight controller" note (the test suite
+  runs fully offline — no hardware needed to verify the build).
+
+### Changed
+- **MCP registration docs are now OS-generic:** a `C:\path\to\inav-mcp`
+  placeholder plus a Linux/macOS (`.venv/bin/python`) config example, so the
+  copy-paste block works on any platform instead of only the author's machine.
+
 ## [0.3.0] - 2026-06-21
 
 Reboot-churn reduction. On iNAV, **leaving the CLI always reboots the FC** (both
@@ -110,7 +130,8 @@ Initial release — milestones M0–M5, hardware-verified against a SpeedyBee F4
   built-in MSP v1/v2 codec (no GPL runtime dependencies — MIT licensed).
 - 134 offline tests.
 
-[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/starlordz12/inav-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/starlordz12/inav-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/starlordz12/inav-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/starlordz12/inav-mcp/releases/tag/v0.1.0

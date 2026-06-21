@@ -1,0 +1,63 @@
+name: Release
+
+# Publish a GitHub Release for a version tag.
+#
+# - On `vX.Y.Z` tag push: a Release is created automatically.
+# - workflow_dispatch: publish a Release for an EXISTING tag (e.g. v0.3.0)
+#   without moving it. Needed for tags created before this workflow existed,
+#   since a tag-push run uses the workflow file as it was at the tagged commit.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish a release for (e.g. v0.3.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Extract changelog section
+        run: |
+          version="${{ steps.tag.outputs.version }}"
+          awk -v ver="$version" '
+            $0 ~ ("^## \\[" ver "\\]") {f=1; next}
+            f && /^## \[/ {exit}
+            f {print}
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "No CHANGELOG section found for version $version" >&2
+            exit 1
+          fi
+          echo "----- release notes -----"
+          cat release_notes.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body_path: release_notes.md

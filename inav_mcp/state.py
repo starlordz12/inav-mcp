@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 _connection: "Optional[SerialConnection]" = None
 _profile: "Optional[AircraftProfile]" = None
+_board_info: "Optional[dict]" = None
 
 
 def get_connection() -> "Optional[SerialConnection]":
@@ -53,3 +54,17 @@ def require_profile() -> "AircraftProfile":
             "No aircraft profile defined. Call define_aircraft() first."
         )
     return p
+
+
+# ── Board info singleton ──────────────────────────────────────────────────────
+# Cached identity (incl. fw_version, sensors_present) from the last connect/
+# board_info, so tools can check firmware-version compatibility without an extra
+# MSP round-trip.
+
+def get_board_info() -> "Optional[dict]":
+    return _board_info
+
+
+def set_board_info(info: "Optional[dict]") -> None:
+    global _board_info
+    _board_info = info

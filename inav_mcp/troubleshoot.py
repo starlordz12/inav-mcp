@@ -19,6 +19,9 @@ _FLAGS_JSON = os.path.join(
 _arming_flags_db: dict | None = None
 
 
+_flag_table_meta: dict | None = None
+
+
 def _get_flags_db() -> dict:
     global _arming_flags_db
     if _arming_flags_db is None:
@@ -26,6 +29,51 @@ def _get_flags_db() -> dict:
             data = json.load(f)
         _arming_flags_db = {k: v for k, v in data.items() if not k.startswith("_")}
     return _arming_flags_db
+
+
+def flag_table_meta() -> dict:
+    """Metadata about the arming-flag bit table: which iNAV majors it's calibrated for."""
+    global _flag_table_meta
+    if _flag_table_meta is None:
+        with open(_FLAGS_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+        _flag_table_meta = {
+            "source":            data.get("_source", "unknown"),
+            "calibrated_majors": data.get("_calibrated_majors", [9]),
+        }
+    return _flag_table_meta
+
+
+def firmware_calibration_status(fw_version: str | None) -> dict:
+    """Report whether the arming-flag decode table matches the connected firmware.
+
+    iNAV shifts arming-disable bit positions between major versions, so decoding
+    flags from a firmware outside the calibrated range can MISLABEL them (the raw
+    flag value is always correct). Returns a dict with a `warning` when out of range.
+    """
+    from .msp import firmware_major
+
+    meta   = flag_table_meta()
+    majors = meta["calibrated_majors"]
+    major  = firmware_major(fw_version)
+    calibrated = (major is None) or (major in majors)
+
+    out: dict = {
+        "fw_version":                 fw_version,
+        "fw_major":                   major,
+        "flag_table_calibrated_for":  majors,
+        "flag_table_source":          meta["source"],
+        "calibrated":                 calibrated,
+    }
+    if major is not None and not calibrated:
+        out["warning"] = (
+            f"Arming-flag decoding is calibrated for iNAV {majors}, but this FC reports "
+            f"firmware {fw_version} (major {major}). iNAV has shifted arming-flag bit "
+            "positions between major versions, so the flag NAMES/reasons may be mislabelled "
+            "on this version. The raw arming_disable_flags value is still correct — "
+            "cross-check in the iNAV Configurator if a flag looks wrong."
+        )
+    return out
 
 
 # ── Individual checkers ───────────────────────────────────────────────────────

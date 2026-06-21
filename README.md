@@ -72,12 +72,13 @@ Or drive it conversationally, e.g.:
 
 ---
 
-## Tools (22)
+## Tools (34)
 
 ### Connection & identity
 | Tool | What it does |
 |---|---|
 | `list_serial_ports()` | List available serial ports. |
+| `find_fc(baud=115200, probe_all=False)` | Auto-detect which port has an FC by probing for MSP identity — no guessing the port. |
 | `connect(port, baud=115200)` | Open the FC connection, return board identity. |
 | `disconnect()` | Close the connection. |
 | `board_info()` | FC variant, firmware version, target, API version, sensors. |
@@ -87,7 +88,7 @@ Or drive it conversationally, e.g.:
 |---|---|
 | `define_aircraft(name, wing_type, esc_protocol, cells, …)` | Offline planner — stores a profile and generates the CLI config plan. |
 | `get_aircraft_profile()` | The current declared profile + plan. |
-| `apply_aircraft_setup(confirm=False, save=False)` | Apply the plan (gated: not armed, auto-backup, read-back verify). |
+| `apply_aircraft_setup(confirm=False)` | Apply the plan (gated: not armed, auto-backup, read-back verify). On iNAV, applying is inherently save+reboot. |
 | `check_config()` | `diff all` + lint against the declared profile + ARM check. |
 
 ### Flight modes & switches
@@ -107,13 +108,32 @@ Or drive it conversationally, e.g.:
 | `read_sensors()` | Live attitude, per-sensor health, battery. |
 | `get_status()` | MSP status + CLI `status`/`tasks`. |
 | `list_flight_modes()` | All modes and their current switch assignments. |
+| `check_failsafe()` | Read `failsafe_*` settings, explain the RC-loss procedure, flag risky setups (e.g. RTH without GPS). |
+
+### Bench tests & calibration
+| Tool | What it does |
+|---|---|
+| `test_motor(motor, throttle_us=1100, duration_s=2.0, props_removed=False, confirm=False)` | Spin ONE motor briefly. Hard-gated: `props_removed=True` + `confirm=True`, refuses while armed, always auto-stops. (No `test_servo` — iNAV has no live servo override; verify surfaces with the TX sticks + `read_rc_channels()`.) |
+| `calibrate_accelerometer(confirm=False)` | Zero-level the accelerometer (board flat + still). Fixes most "not level" arming blocks. |
+| `calibrate_magnetometer(confirm=False)` | Calibrate the compass (rotate the craft ~30s). |
+
+### Navigation & tuning
+| Tool | What it does |
+|---|---|
+| `read_gps()` | Live GPS fix/sats/position + nav-readiness assessment (read-only). |
+| `configure_gps(provider="UBLOX", sbas=None, confirm=False)` | Enable the GPS feature and set provider/SBAS. |
+| `set_nav(rth_altitude_m=None, rth_climb_first=None, rth_allow_landing=None, loiter_radius_m=None, confirm=False)` | Set fixed-wing RTH altitude / climb-first / landing / loiter radius. |
+| `read_tuning()` | Read fixed-wing PID gains, rates, and filter cutoffs. |
+| `set_pid(axis, p=None, i=None, d=None, ff=None, confirm=False)` | Set fixed-wing P/I/D/FF gains for one axis. |
 
 ### Config management
 | Tool | What it does |
 |---|---|
 | `backup_config(label=None)` | Save `diff all` to a timestamped file under `./backups/`. |
+| `list_backups()` | List saved backups (path, time, size, label), newest first. |
 | `restore_config(path, confirm=False)` | Replay a saved backup via CLI. |
-| `cli(command, confirm_for_writes=False)` | Raw CLI escape hatch (writes need the confirm flag). |
+| `set_failsafe(procedure=None, throttle_us=None, confirm=False)` | Set the RC-loss procedure / throttle (atomic write; FC validates the procedure token). |
+| `cli(command, confirm_for_writes=False, props_removed=False)` | Raw CLI escape hatch. Writes need `confirm_for_writes`; a live `motor` test needs `props_removed=True` and is never saved. |
 | `save_and_reboot(confirm=False)` | `save` to EEPROM and reboot (marks the connection stale). |
 
 ## Resources
@@ -126,8 +146,8 @@ Or drive it conversationally, e.g.:
 
 ## Safety model
 
-1. **Props-off gate** for anything that can spin a motor.
-2. **Armed guard** — all writes refuse if the FC reports armed.
+1. **Props-off gate** — `test_motor()` and any live `motor` command via `cli(...)` require `props_removed=True` (the generic write-confirm cannot bypass it), refuse while the board is armed, and are never saved. `test_motor()` also clamps throttle/duration and always commands the motor back to stop.
+2. **Armed guard** — all writes (and motor tests / calibrations) refuse if the FC reports armed.
 3. **Auto-backup** before every write; the backup path is returned.
 4. **Dry-run by default** — writes return the exact commands; `confirm=True` applies.
 5. **Read-back verify** — after applying, settings are re-read and mismatches flagged.
@@ -143,12 +163,15 @@ Or drive it conversationally, e.g.:
   reads (status, RC, attitude, analog, GPS, sensor health, mode ranges, box maps).
 - **Box IDs are resolved at runtime** via `MSP_BOXNAMES` + `MSP_BOXIDS` — never hardcoded.
 - **Arming flags** are decoded from `knowledge/arming_flags.json`, calibrated to
-  iNAV 9.x bit positions.
+  iNAV 8.x/9.x bit positions. The table declares its calibrated major versions, and
+  `connect()` / `board_info()` / `why_wont_it_arm()` / `diagnose()` **warn when the
+  connected firmware is outside that range** (bit positions shift between majors, so
+  flag *names* may be mislabelled even though the raw flag value is correct).
 
 ## Development
 
 ```bash
-.venv/Scripts/python -m pytest          # 111 tests, all offline (no FC needed)
+.venv/Scripts/python -m pytest          # 168 tests, all offline (no FC needed)
 ```
 
 The suite covers the MSP codec round-trips, CLI response parsing, the diagnostic
@@ -170,7 +193,55 @@ inav_mcp/
   state.py           # connection + profile singletons
   knowledge/         # arming_flags / modes_reference / esc_protocols / fc_targets (JSON)
 tests/               # offline pytest suite
+tools/               # gen_readme_tools.py — regenerates the tool reference below
+examples/            # flying_wing_quickstart.md — end-to-end walkthrough
 ```
+
+## Full tool reference
+
+Complete, signature-accurate list — regenerate after changing tools with
+`python -m tools.gen_readme_tools` (a test fails if this drifts):
+
+<!-- TOOLS:AUTOGEN:START -->
+_34 tools — auto-generated by `tools/gen_readme_tools.py`; do not edit by hand._
+
+| Tool | Description |
+|---|---|
+| `apply_aircraft_setup(confirm=False)` | Apply the declared aircraft profile to the FC, then save and reboot. |
+| `assign_switch(switch_channel, switch_positions, mode_per_position, confirm=False)` | Map a multi-position switch's detents to flight modes in one call. |
+| `backup_config(label=None)` | Save the current FC config to a timestamped backup file. |
+| `board_info()` | Read flight-controller identity over MSP. |
+| `calibrate_accelerometer(confirm=False)` | Calibrate the accelerometer (zero-level). Fixes most 'not level' / 'accel not |
+| `calibrate_magnetometer(confirm=False)` | Calibrate the compass (magnetometer). Only useful if a compass is installed. |
+| `check_config()` | Compare the FC's actual configuration against the declared aircraft profile. |
+| `check_failsafe()` | Read and explain the failsafe configuration (what happens on RC loss). |
+| `clear_flight_mode(mode_name, confirm=False)` | Remove all switch assignments for a flight mode (disables its slots via CLI 'aux'). |
+| `cli(command, confirm_for_writes=False, props_removed=False)` | Raw CLI escape hatch — run any iNAV CLI command directly. |
+| `configure_gps(provider='UBLOX', sbas=None, confirm=False)` | Enable the GPS feature and set the receiver provider / SBAS (atomic CLI write). |
+| `connect(port, baud=115200)` | Open the serial connection to the FC and return board identity. |
+| `define_aircraft(name, wing_type, esc_protocol, cells, fc_target=None, motor_kv=None, motor_poles=14, servo_count=None, notes=None)` | Define the aircraft hardware profile and generate a configuration plan. |
+| `diagnose()` | Full diagnostic sweep — the flagship troubleshooter. |
+| `disconnect()` | Close the serial connection to the FC. |
+| `find_fc(baud=115200, probe_all=False)` | Auto-detect which serial port has a flight controller, so you don't guess. |
+| `get_aircraft_profile()` | Return the currently declared aircraft profile. |
+| `get_status()` | Read FC status via both MSP and CLI. |
+| `list_backups()` | List saved config backups under ./backups/, newest first. No FC needed. |
+| `list_flight_modes()` | List all available flight modes and their current switch assignments. |
+| `list_serial_ports()` | List all available serial ports. |
+| `read_gps()` | Live GPS status: fix type, satellites, position, speed, HDOP + nav-readiness. |
+| `read_rc_channels()` | Read live RC channel values via MSP. |
+| `read_sensors()` | Read live sensor values: attitude, per-sensor health, and analog (battery). |
+| `read_tuning()` | Read fixed-wing PID gains, rates, and key filter cutoffs (via CLI). |
+| `restore_config(path, confirm=False)` | Restore FC config by replaying a backup file's CLI commands, then save+reboot. |
+| `save_and_reboot(confirm=False)` | Save the running config to EEPROM and reboot the FC. |
+| `set_failsafe(procedure=None, throttle_us=None, delay_s=None, off_delay_s=None, confirm=False)` | Set the core failsafe behaviour (atomic CLI write: backup → apply → save+reboot). |
+| `set_flight_mode(mode_name, aux_channel, range_low, range_high, confirm=False)` | Assign a flight mode to an aux channel range (read-modify-write via CLI 'aux'). |
+| `set_nav(rth_altitude_m=None, rth_climb_first=None, rth_allow_landing=None, loiter_radius_m=None, confirm=False)` | Set core fixed-wing navigation / RTH parameters (atomic CLI write). |
+| `set_pid(axis, p=None, i=None, d=None, ff=None, confirm=False)` | Set fixed-wing PID gains for ONE axis (atomic CLI write). |
+| `suggest_mode_layout(skill_level='beginner', num_switches=2, has_gps=False)` | Recommend a fixed-wing flight-mode/switch layout. Pure knowledge — no FC needed. |
+| `test_motor(motor, throttle_us=1100, duration_s=2.0, props_removed=False, confirm=False)` | Spin ONE motor briefly for a bench test (direction / wiring / response). |
+| `why_wont_it_arm()` | Decode the FC's arming-prevention flags into plain English. |
+<!-- TOOLS:AUTOGEN:END -->
 
 ## License
 

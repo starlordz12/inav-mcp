@@ -1,6 +1,8 @@
 {
   "_source": "iNAV Configurator 9.0.2 — app-9.0.2/resources/app/.vite/renderer/main_window/assets/index-Cu-IIg1k.js updateStatusBar(). The 32-bit field from MSP_STATUS @14 is the OR of armingFlags (state bits) and armingDisableFlags (reason bits).",
   "_note": "Bit 2 (4)=ARMED, bit 4 (16)=SIMULATOR_MODE are state bits, not disable reasons. Bit 17 (BOXKILLSWITCH) was removed in iNAV 9.x. Bits 0-1, 3, 5 are unused.",
+  "_calibrated_majors": [8, 9],
+  "_calibration_note": "These bit positions match iNAV 8.x/9.x. iNAV has added/removed arming-disable flags across major versions, which SHIFTS bit positions — on firmware outside this range the decoded flag NAMES may be wrong even though the raw flag value is correct. firmware_calibration_status() warns when the connected FC is out of range.",
   "2": {
     "name": "ARMED",
     "severity": "info",

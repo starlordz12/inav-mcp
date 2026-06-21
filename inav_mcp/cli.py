@@ -94,6 +94,25 @@ def is_replayable(cmd: str) -> bool:
     return cmd.strip().lower() not in _REPLAY_SKIP
 
 
+def parse_get_output(text: str) -> dict[str, str]:
+    """Parse the CLI `get <prefix>` output into a {name: value} dict.
+
+    iNAV prints one `name = value` line per matching setting. Lines that are
+    comments, errors, or lack '=' are skipped.
+    """
+    settings: dict[str, str] = {}
+    for line in text.replace("\r", "\n").split("\n"):
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith("###") or "=" not in s:
+            continue
+        name, _, value = s.partition("=")
+        name = name.strip()
+        value = value.strip()
+        if name and " " not in name:   # a setting name is a single token
+            settings[name] = value
+    return settings
+
+
 def cli_error(raw: str) -> str | None:
     """Return the CLI error text if the response indicates a rejected command.
 
@@ -117,3 +136,26 @@ def is_write_command(cmd: str) -> bool:
     if any(c.startswith(p) or c == p.rstrip() for p in _READ_PREFIXES):
         return False
     return any(c.startswith(p) for p in _WRITE_PREFIXES)
+
+
+# Commands that drive a LIVE motor output the instant they run — `motor <index>
+# <value>` overrides a motor and spins it immediately while in CLI. These are
+# momentary bench tests, NOT persistent config: they gate on props-off (§10.1)
+# and must never be SAVEd (saving a momentary value is wrong, and 'save' reboots
+# the FC mid-test). Bare read forms — `motor` / `motor <index>`, which only PRINT
+# values — do not match, so reading stays free. NOTE: `servo ...` in the CLI is a
+# persistent servo-config write (min/max/middle/rate), not a live output, so it
+# stays on the normal write path and is NOT gated here.
+_ACTUATOR_VERBS: frozenset[str] = frozenset({"motor"})
+
+
+def is_actuator_command(cmd: str) -> bool:
+    """Return True if the command drives a live motor output (can spin a prop).
+
+    Matches `motor <index> <value>` (verb + index + value). Read forms — `motor`
+    or `motor <index>`, which only print values — do not match. Enforces the
+    props-off gate: such commands require props_removed=True, refuse while armed,
+    and are never saved.
+    """
+    tokens = cmd.strip().lower().split()
+    return len(tokens) >= 3 and tokens[0] in _ACTUATOR_VERBS

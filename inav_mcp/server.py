@@ -9,11 +9,13 @@ Milestone 4: suggest_mode_layout, set_flight_mode, assign_switch, clear_flight_m
 """
 from __future__ import annotations
 import os
+import time
+from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 
 from . import state
-from .cli import is_write_command, cli_error, is_replayable
+from .cli import is_write_command, is_actuator_command, cli_error, is_replayable, parse_get_output
 from .connection import SerialConnection
 from .msp import (
     MSP_API_VERSION,
@@ -37,6 +39,8 @@ from .profiles import AircraftProfile, SUPPORTED_WING_TYPES, generate_cli_comman
 from .msp import (
     MSP_RC, MSP_ATTITUDE, MSP_ANALOG, MSP_STATUS, MSP_RAW_GPS,
     MSP_SENSOR_STATUS,
+    MSP_SET_MOTOR, MSP_ACC_CALIBRATION, MSP_MAG_CALIBRATION,
+    MAX_SUPPORTED_MOTORS, encode_motor_values,
     parse_rc_channels, parse_attitude, parse_analog,
     parse_sensor_status, parse_raw_gps,
 )
@@ -48,7 +52,8 @@ mcp = FastMCP(
         "flight controller over USB.\n\n"
         "WORKFLOW: call list_serial_ports() to find the port, then connect(port). "
         "All other tools require an active connection.\n\n"
-        "SAFETY: props must be removed from the aircraft before any motor test. "
+        "SAFETY: a live motor test via cli('motor ...') can spin a propeller — it "
+        "requires props_removed=True, refuses while armed, and is never saved. "
         "Every config write auto-backs-up and is dry-run by default."
     ),
 )
@@ -76,6 +81,63 @@ def _gather_board_info(conn: SerialConnection) -> dict:
         except Exception as exc:
             info[f"_error_cmd_{cmd}"] = str(exc)
     return info
+
+
+def _attach_fw_calibration(info: dict) -> dict:
+    """Annotate a board-info dict with arming-flag-table calibration status.
+
+    Surfaces a warning when the connected firmware is outside the version range
+    the arming-flag decode table was built for (so flag names may be mislabelled).
+    """
+    cal = _troubleshoot.firmware_calibration_status(info.get("fw_version"))
+    info["firmware_calibration"] = cal
+    if not cal["calibrated"]:
+        info["firmware_warning"] = cal["warning"]
+    return info
+
+
+# Substrings that suggest a USB-serial/CDC device worth probing for an FC.
+_FC_PORT_HINTS = ("USB", "STM", "CP210", "CH340", "CDC", "VCP", "ACM", "SERIAL")
+
+
+def _list_port_devices() -> list[dict]:
+    """Enumerate serial ports as plain dicts (separated out for testability)."""
+    from serial.tools.list_ports import comports
+    return [
+        {"device": p.device, "description": p.description or "", "hwid": p.hwid or ""}
+        for p in comports()
+    ]
+
+
+def _looks_like_serial(port: dict) -> bool:
+    """True if the port description/hwid looks like a USB-serial/CDC device."""
+    blob = f"{port.get('description', '')} {port.get('hwid', '')}".upper()
+    return any(h in blob for h in _FC_PORT_HINTS)
+
+
+def _probe_fc_port(device: str, baud: int = 115200) -> dict | None:
+    """Briefly open a port and ask for MSP identity. Returns FC info or None.
+
+    Uses a single short-timeout MSP_FC_VARIANT probe so non-FC ports fail fast.
+    """
+    from .connection import SerialConnection
+    from .msp import MSP_FC_VARIANT, MSP_FC_VERSION, parse_fc_variant, parse_fc_version
+
+    conn = SerialConnection(port=device, baud=baud)
+    try:
+        conn.open()
+        variant = parse_fc_variant(conn.send_msp_v1(MSP_FC_VARIANT, timeout=0.8)).get("variant")
+        if not variant:
+            return None
+        fw = parse_fc_version(conn.send_msp_v1(MSP_FC_VERSION, timeout=0.8)).get("fw_version")
+        return {"port": device, "variant": variant, "fw_version": fw}
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _read_inav_status(conn: SerialConnection) -> dict:
@@ -155,7 +217,8 @@ def connect(port: str, baud: int = 115200) -> dict:
     info["connected"] = True
     info["port"]      = port
     info["baud"]      = baud
-    return info
+    state.set_board_info(info)
+    return _attach_fw_calibration(info)
 
 
 @mcp.tool()
@@ -180,7 +243,62 @@ def board_info() -> dict:
     Requires an active connection (call connect first).
     """
     conn = state.require_connection()
-    return _gather_board_info(conn)
+    info = _gather_board_info(conn)
+    state.set_board_info(info)
+    return _attach_fw_calibration(info)
+
+
+@mcp.tool()
+def find_fc(baud: int = 115200, probe_all: bool = False) -> dict:
+    """Auto-detect which serial port has a flight controller, so you don't guess.
+
+    Briefly opens each likely USB-serial port and asks for MSP identity; returns the
+    ports that answered as an FC (variant + firmware). Then call connect(port).
+
+    Args:
+        baud:      Baud to probe at (default 115200, iNAV's USB VCP default).
+        probe_all: If True, probe EVERY serial port; otherwise only USB-serial-looking
+                   ones (safer — avoids poking unrelated devices like Bluetooth/modems).
+    """
+    active = None
+    conn = state.get_connection()
+    if conn is not None and conn.is_open():
+        active = conn.port
+
+    found:   list[dict] = []
+    probed:  list[str]  = []
+    skipped: list[str]  = []
+
+    for p in _list_port_devices():
+        dev = p["device"]
+        if dev == active:
+            bi = state.get_board_info() or {}
+            found.append({
+                "port":       dev,
+                "variant":    bi.get("variant", "INAV"),
+                "fw_version": bi.get("fw_version"),
+                "active":     True,
+            })
+            continue
+        if not probe_all and not _looks_like_serial(p):
+            skipped.append(dev)
+            continue
+        probed.append(dev)
+        res = _probe_fc_port(dev, baud)
+        if res:
+            found.append(res)
+
+    return {
+        "found":               found,
+        "count":               len(found),
+        "probed":              probed,
+        "skipped_non_serial":  skipped,
+        "note": (
+            (f"Connect with connect('{found[0]['port']}'). " if found else
+             "No FC detected. Plug in the FC, or retry with find_fc(probe_all=True). ")
+            + ("An already-open connection is marked active=True." if active else "")
+        ).strip(),
+    }
 
 
 # ── Tools: Config management (M1) ────────────────────────────────────────────
@@ -366,7 +484,7 @@ def restore_config(path: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
-def cli(command: str, confirm_for_writes: bool = False) -> str:
+def cli(command: str, confirm_for_writes: bool = False, props_removed: bool = False) -> str:
     """Raw CLI escape hatch — run any iNAV CLI command directly.
 
     Read-only commands (diff, get, status, dump, tasks, help, version) run and the
@@ -374,22 +492,52 @@ def cli(command: str, confirm_for_writes: bool = False) -> str:
     smix, ...) require confirm_for_writes=True and are SAVED (persist + reboot),
     since on iNAV exiting CLI without save discards changes.
 
+    SAFETY — motor commands: a 'motor ...' command drives a LIVE motor output and
+    can spin a propeller. It is gated separately from ordinary writes: it requires
+    props_removed=True (NOT confirm_for_writes), refuses if the board is armed, and
+    is NEVER saved — it's a momentary bench test that stops when the FC reboots on
+    CLI exit.
+
     Prefer the dedicated write tools (they back up and verify). Use this for
     one-off commands the other tools don't cover.
 
     Args:
         command:             The CLI command to run (without trailing newline).
         confirm_for_writes:  Set True to allow (and persist) write commands.
+        props_removed:       Set True to allow a live 'motor' test — ONLY after
+                             physically removing all propellers from the aircraft.
     """
     conn = state.require_connection()
-    is_write = is_write_command(command)
+    is_write    = is_write_command(command)
+    is_actuator = is_actuator_command(command)
 
-    if is_write and not confirm_for_writes:
-        return (
-            f"⚠ '{command}' looks like a write operation. "
-            "Set confirm_for_writes=True to execute it (it will be SAVED and the FC "
-            "will reboot), or use a dedicated write tool which backs up and verifies."
-        )
+    # Props-off safety gate: a live motor command can spin a propeller. This gate
+    # is independent of confirm_for_writes — the generic write-confirm must NOT
+    # bypass it. Enforced BEFORE any serial I/O.
+    if is_actuator:
+        if not props_removed:
+            return (
+                f"⚠ SAFETY: '{command}' drives a live motor output and can spin a "
+                "propeller. Refusing without props_removed=True. Remove ALL props from "
+                "the aircraft, then call cli(..., props_removed=True). This is a momentary "
+                "bench test — it is not saved and stops when the FC reboots on exit."
+            )
+        try:
+            check_not_armed(conn)
+        except RuntimeError as exc:
+            return f"⚠ SAFETY: {exc}"
+    elif is_write:
+        if not confirm_for_writes:
+            return (
+                f"⚠ '{command}' looks like a write operation. "
+                "Set confirm_for_writes=True to execute it (it will be SAVED and the FC "
+                "will reboot), or use a dedicated write tool which backs up and verifies."
+            )
+        # Spec §10.2: all writes refuse while the board is armed.
+        try:
+            check_not_armed(conn)
+        except RuntimeError as exc:
+            return f"⚠ SAFETY: {exc}"
 
     conn.enter_cli()
     error = None
@@ -397,12 +545,16 @@ def cli(command: str, confirm_for_writes: bool = False) -> str:
         output = conn.run_cli(command)
         error = cli_error(output)   # iNAV rejects silently (no exception) — detect '### ERROR'
     finally:
-        # A rejected write changed nothing — don't persist it. Reads never save.
-        # Either path reboots the FC; we reconnect.
-        conn.exit_cli(save=(is_write and error is None), reconnect=True)
+        # Persist ONLY a successful, non-actuator write. A live motor test is
+        # momentary and must never be saved; reads never save; a rejected write
+        # changed nothing. Either path reboots the FC; we reconnect.
+        save = is_write and not is_actuator and error is None
+        conn.exit_cli(save=save, reconnect=True)
 
     if error:
         return f"{output}\n\n[⚠ command REJECTED by FC — nothing saved]"
+    if is_actuator:
+        return f"{output}\n\n[live motor test — NOT saved; FC reboots on exit, stopping the motor]"
     if is_write:
         return f"{output}\n\n[applied and SAVED; FC rebooted and reconnected]"
     return output
@@ -595,7 +747,22 @@ def why_wont_it_arm() -> dict:
             "source":   "mode_ranges",
         }]
 
-    all_problems = flag_problems + arm_problem
+    # Firmware-version guard: if the flag table doesn't match this FC's firmware,
+    # the decoded flag NAMES above may be mislabelled — warn prominently.
+    bi  = state.get_board_info() or {}
+    cal = _troubleshoot.firmware_calibration_status(bi.get("fw_version"))
+    fw_problem = []
+    if not cal["calibrated"]:
+        fw_problem = [{
+            "severity": "warning",
+            "title":    "Arming-flag table may not match this firmware",
+            "detail":   cal["warning"],
+            "fix":      "Decoded flag NAMES may be wrong on this firmware version; the raw "
+                        "arming_disable_flags value is correct. Cross-check in iNAV Configurator if unsure.",
+            "source":   "firmware_version",
+        }]
+
+    all_problems = flag_problems + arm_problem + fw_problem
     _SEVERITY_ORDER = {"critical": 0, "error": 1, "warning": 2, "info": 3}
     all_problems.sort(key=lambda p: _SEVERITY_ORDER.get(p.get("severity", "info"), 3))
 
@@ -614,6 +781,8 @@ def why_wont_it_arm() -> dict:
         "can_arm":                  can_arm,
         "arm_mode_assigned":        arm_assigned,
         "status_source":            status.get("_status_source"),
+        "flag_table_calibrated_for": cal["flag_table_calibrated_for"],
+        "firmware_warning":         cal.get("warning"),
         "problem_count":            len(all_problems),
         "problems":                 all_problems,
         "note":                     note,
@@ -660,6 +829,20 @@ def diagnose() -> dict:
 
     # Run all diagnostic checks
     problems = _troubleshoot.run_checks(raw)
+
+    # Firmware-version guard for the arming-flag decode (see why_wont_it_arm).
+    bi  = state.get_board_info() or {}
+    cal = _troubleshoot.firmware_calibration_status(bi.get("fw_version"))
+    raw["firmware_calibration"] = cal
+    if not cal["calibrated"]:
+        problems.insert(0, {
+            "severity": "warning",
+            "title":    "Arming-flag table may not match this firmware",
+            "detail":   cal["warning"],
+            "fix":      "Decoded arming-flag names may be wrong on this firmware; the raw "
+                        "flag value is correct. Cross-check in iNAV Configurator if unsure.",
+            "source":   "firmware_version",
+        })
 
     return {
         "status":          "healthy" if not problems else "problems_found",
@@ -1059,6 +1242,529 @@ def clear_flight_mode(mode_name: str, confirm: bool = False) -> dict:
     return _apply_aux_commands(conn, plan["commands"],
                                label=f"clear-{mode_name}",
                                extra={"mode_name": mode_name, "slots": plan["slots"]})
+
+
+# ── Tools: Bench tests, calibration, failsafe, backups (M6) ──────────────────
+
+@mcp.tool()
+def test_motor(
+    motor: int,
+    throttle_us: int = 1100,
+    duration_s: float = 2.0,
+    props_removed: bool = False,
+    confirm: bool = False,
+) -> dict:
+    """Spin ONE motor briefly for a bench test (direction / wiring / response).
+
+    ⚠ DANGER: this drives a LIVE motor output. REMOVE ALL PROPELLERS FIRST.
+
+    Safety gates (enforced in code):
+      - props_removed=True is REQUIRED (refuses otherwise),
+      - refuses if the FC reports armed,
+      - confirm=True is REQUIRED (dry-run preview otherwise),
+      - throttle clamped to 1000–2000 µs, duration clamped to 0.2–5.0 s,
+      - the motor is ALWAYS commanded back to stop (1000 µs) when the test ends.
+
+    The override is live (MSP, not saved); it also stops if the FC reboots or
+    loses power.
+
+    Args:
+        motor:        1-based motor number (1 = motor 1). Only this motor spins;
+                      all others are held at 1000 µs (stop).
+        throttle_us:  Output in µs (1000 = stop, ~1100 = gentle, 2000 = full).
+                      Keep it LOW for a direction check.
+        duration_s:   How long to hold the output (0.2–5.0 s).
+        props_removed: MUST be True — confirms props are physically removed.
+        confirm:      MUST be True to actually run.
+    """
+    conn = state.require_connection()
+
+    if not (1 <= motor <= MAX_SUPPORTED_MOTORS):
+        return {"ran": False, "error": f"motor must be 1..{MAX_SUPPORTED_MOTORS} (got {motor})."}
+
+    throttle = max(1000, min(2000, int(throttle_us)))
+    duration = max(0.2, min(5.0, float(duration_s)))
+
+    # Props-off gate — independent of confirm.
+    if not props_removed:
+        return {
+            "ran": False,
+            "error": "SAFETY: props_removed=True is required. Remove ALL propellers from the "
+                     "aircraft, then call test_motor(..., props_removed=True, confirm=True).",
+        }
+
+    # Armed guard (best-effort).
+    try:
+        check_not_armed(conn)
+    except RuntimeError as exc:
+        return {"ran": False, "error": f"SAFETY: {exc}"}
+
+    if not confirm:
+        return {
+            "ran": False,
+            "dry_run": True,
+            "motor": motor,
+            "throttle_us": throttle,
+            "duration_s": duration,
+            "message": (
+                f"Dry run — would spin motor {motor} at {throttle} µs for {duration:.1f}s "
+                "(all other motors held at stop), then stop. Confirm props are OFF, then call "
+                "with props_removed=True, confirm=True."
+            ),
+        }
+
+    values = [1000] * MAX_SUPPORTED_MOTORS
+    values[motor - 1] = throttle
+    test_payload = encode_motor_values(values)
+    stop_payload = encode_motor_values([1000] * MAX_SUPPORTED_MOTORS)
+
+    pulses = 0
+    err = None
+    try:
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            conn.send_msp_v1(MSP_SET_MOTOR, test_payload, timeout=1.0)
+            pulses += 1
+            time.sleep(0.1)
+    except Exception as exc:
+        err = str(exc)
+    finally:
+        # ALWAYS command stop, regardless of what happened above.
+        for _ in range(3):
+            try:
+                conn.send_msp_v1(MSP_SET_MOTOR, stop_payload, timeout=1.0)
+            except Exception:
+                pass
+
+    return {
+        "ran": True,
+        "motor": motor,
+        "throttle_us": throttle,
+        "duration_s": duration,
+        "pulses_sent": pulses,
+        "stopped": True,
+        "error": err,
+        "note": (
+            "Motor commanded back to stop (1000 µs). If anything kept spinning, cut power. "
+            "Live bench test — nothing was saved. NOTE: iNAV servos have no live CLI/MSP "
+            "override, so there is no test_servo — verify control surfaces by moving the TX "
+            "sticks and watching read_rc_channels(), or use the Configurator Servos tab."
+        ),
+    }
+
+
+@mcp.tool()
+def calibrate_accelerometer(confirm: bool = False) -> dict:
+    """Calibrate the accelerometer (zero-level). Fixes most 'not level' / 'accel not
+    calibrated' arming blocks.
+
+    Sends MSP_ACC_CALIBRATION; iNAV samples for ~2s and saves to EEPROM
+    automatically (no reboot).
+
+    BEFORE running: set the board/aircraft on a LEVEL surface in its normal flight
+    orientation and DO NOT move it until this returns.
+
+    Gates: connected, not armed, confirm=True (dry-run otherwise).
+    """
+    conn = state.require_connection()
+    if not confirm:
+        return {
+            "calibrated": False, "dry_run": True,
+            "message": "Place the board LEVEL and STILL, then call "
+                       "calibrate_accelerometer(confirm=True). It samples ~2s and saves automatically.",
+        }
+    try:
+        check_not_armed(conn)
+    except RuntimeError as exc:
+        return {"calibrated": False, "error": f"SAFETY: {exc}"}
+    try:
+        conn.send_msp_v1(MSP_ACC_CALIBRATION, timeout=2.0)
+    except Exception as exc:
+        return {"calibrated": False, "error": f"Calibration command failed: {exc}"}
+    return {
+        "calibrated": True,
+        "note": "Accelerometer calibration started — keep the board LEVEL and STILL for ~3s. "
+                "iNAV saves the result automatically. Re-check with read_sensors() / why_wont_it_arm().",
+    }
+
+
+@mcp.tool()
+def calibrate_magnetometer(confirm: bool = False) -> dict:
+    """Calibrate the compass (magnetometer). Only useful if a compass is installed.
+
+    Sends MSP_MAG_CALIBRATION; you then have ~30s to rotate the aircraft 360°
+    around all three axes. iNAV saves the result automatically.
+
+    Gates: connected, not armed, confirm=True (dry-run otherwise).
+    """
+    conn = state.require_connection()
+
+    bi = state.get_board_info() or {}
+    sensors = bi.get("sensors_present", {})
+    mag_note = ""
+    if sensors and not sensors.get("mag", False):
+        mag_note = ("No magnetometer was detected at last connect — compass calibration "
+                    "only helps if a compass is actually installed. ")
+
+    if not confirm:
+        return {
+            "calibrated": False, "dry_run": True,
+            "message": mag_note + "Call calibrate_magnetometer(confirm=True), then rotate the "
+                       "aircraft 360° around roll, pitch, and yaw for ~30s, away from metal/magnets.",
+        }
+    try:
+        check_not_armed(conn)
+    except RuntimeError as exc:
+        return {"calibrated": False, "error": f"SAFETY: {exc}"}
+    try:
+        conn.send_msp_v1(MSP_MAG_CALIBRATION, timeout=2.0)
+    except Exception as exc:
+        return {"calibrated": False, "error": f"Calibration command failed: {exc}"}
+    return {
+        "calibrated": True,
+        "note": mag_note + "Compass calibration started — rotate the aircraft 360° around all "
+                "3 axes for ~30s, away from metal and magnets. iNAV saves automatically.",
+    }
+
+
+_FAILSAFE_PROC_MEANING = {
+    "DROP":    "Cut the motor and neutralise — the aircraft drops. Simple, no GPS needed.",
+    "LAND":    "Controlled descent in place (set throttle + level). No GPS needed.",
+    "SET-THR": "Hold a fixed throttle and level — glides down. No GPS needed.",
+    "RTH":     "Return-to-home then loiter/land. REQUIRES a working GPS + home fix.",
+    "NONE":    "Do nothing — keeps the last command. DANGEROUS for most setups.",
+}
+
+
+@mcp.tool()
+def check_failsafe() -> dict:
+    """Read and explain the failsafe configuration (what happens on RC loss).
+
+    Reads all `failsafe_*` settings via CLI `get failsafe`, summarises the RC-loss
+    procedure in plain English, and flags risky setups (procedure NONE; RTH without GPS).
+
+    NOTE: reads over CLI; exiting CLI reboots the FC, so this reboots and reconnects (~7s).
+    """
+    conn = state.require_connection()
+
+    conn.enter_cli()
+    try:
+        out = conn.run_cli("get failsafe", timeout=15.0)
+    finally:
+        conn.exit_cli(save=False, reconnect=True)
+
+    settings  = parse_get_output(out)
+    procedure = (settings.get("failsafe_procedure") or "").upper()
+
+    warnings: list[str] = []
+    if not procedure:
+        warnings.append("Could not read failsafe_procedure — verify with cli('get failsafe').")
+    elif procedure == "NONE":
+        warnings.append("failsafe_procedure = NONE: on RC loss the aircraft does NOTHING. "
+                        "Strongly consider DROP, LAND/SET-THR, or RTH (with GPS).")
+    elif procedure == "RTH":
+        sensors = (state.get_board_info() or {}).get("sensors_present", {})
+        if sensors and not sensors.get("gps", False):
+            warnings.append("failsafe_procedure = RTH but no GPS was detected at last connect — "
+                            "RTH needs a GPS fix to work. Use DROP or LAND/SET-THR without GPS.")
+
+    return {
+        "settings":          settings,
+        "procedure":         procedure or None,
+        "procedure_meaning": _FAILSAFE_PROC_MEANING.get(procedure, "Unknown / not read."),
+        "warnings":          warnings,
+        "status":            "ok" if not warnings else "review",
+        "rebooted":          True,
+        "raw":               out,
+    }
+
+
+@mcp.tool()
+def set_failsafe(
+    procedure: str | None = None,
+    throttle_us: int | None = None,
+    delay_s: float | None = None,
+    off_delay_s: float | None = None,
+    confirm: bool = False,
+) -> dict:
+    """Set the core failsafe behaviour (atomic CLI write: backup → apply → save+reboot).
+
+    Only the arguments you pass are changed; dry-run by default. For other
+    failsafe_* knobs (distances, angles) use cli('set failsafe_... = N', confirm_for_writes=True).
+
+    Args:
+        procedure:   RC-loss action — one of DROP | LAND | SET-THR | RTH | NONE.
+                     The exact accepted tokens depend on firmware; an invalid value
+                     is rejected by the FC and the whole write is rolled back.
+        throttle_us: failsafe_throttle in µs (used by SET-THR / LAND). Clamped 1000–2000.
+        delay_s:     Guard time after RC loss before failsafe triggers (failsafe_delay).
+                     iNAV stores this in 0.1 s units, so this is converted ×10.
+        off_delay_s: Time the failsafe stage runs before the motor is killed
+                     (failsafe_off_delay), also 0.1 s units (×10).
+        confirm:     True to apply (saves + reboots). Dry-run otherwise.
+
+    Gates: connected, not armed, auto-backup. RTH without GPS will not work — use DROP/LAND.
+    """
+    conn = state.require_connection()
+
+    commands: list[str] = []
+    if procedure is not None:
+        commands.append(f"set failsafe_procedure = {procedure.strip().upper()}")
+    if throttle_us is not None:
+        commands.append(f"set failsafe_throttle = {max(1000, min(2000, int(throttle_us)))}")
+    if delay_s is not None:
+        commands.append(f"set failsafe_delay = {max(0, int(round(delay_s * 10)))}")
+    if off_delay_s is not None:
+        commands.append(f"set failsafe_off_delay = {max(0, int(round(off_delay_s * 10)))}")
+
+    if not commands:
+        return {"error": "Nothing to set — provide procedure, throttle_us, delay_s, and/or off_delay_s."}
+
+    if not confirm:
+        return {
+            "dry_run":  True,
+            "commands": commands,
+            "message":  "Dry run — call set_failsafe(..., confirm=True) to apply "
+                        "(this saves to EEPROM and reboots the FC).",
+        }
+
+    result = _apply_cli_writes(conn, commands, label="set-failsafe", capture_after=False)
+    result["note"] = (
+        "Failsafe updated, SAVED, and the FC rebooted/reconnected."
+        if result["saved"] else
+        f"{len(result['failed'])} command(s) failed — rolled back (nothing saved). "
+        "Check the procedure token is valid for your firmware. See 'failed'."
+    )
+    return result
+
+
+@mcp.tool()
+def list_backups() -> dict:
+    """List saved config backups under ./backups/, newest first. No FC needed.
+
+    Returns each backup's path, modified time, size, line count, and label — so you
+    can pick one to replay with restore_config(path).
+    """
+    if not os.path.isdir(BACKUPS_DIR):
+        return {
+            "backups": [], "count": 0, "backups_dir": BACKUPS_DIR,
+            "note": "No backups yet. Any write tool (or backup_config()) creates one.",
+        }
+
+    entries: list[dict] = []
+    for fn in os.listdir(BACKUPS_DIR):
+        if not fn.endswith(".txt"):
+            continue
+        path = os.path.join(BACKUPS_DIR, fn)
+        try:
+            st = os.stat(path)
+            with open(path, encoding="utf-8") as f:
+                lines = sum(1 for _ in f)
+        except OSError:
+            continue
+        # Filename: backup_<YYYYMMDD>_<HHMMSS>[_<label>].txt
+        bits  = fn[:-4].split("_")
+        label = "_".join(bits[3:]) if len(bits) > 3 else None
+        entries.append({
+            "path":        path,
+            "filename":    fn,
+            "modified":    datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+            "size_bytes":  st.st_size,
+            "lines":       lines,
+            "label":       label,
+        })
+
+    entries.sort(key=lambda e: e["modified"], reverse=True)
+    return {"backups": entries, "count": len(entries), "backups_dir": BACKUPS_DIR}
+
+
+# ── Tools: Navigation / GPS / tuning (M7) ────────────────────────────────────
+
+@mcp.tool()
+def read_gps() -> dict:
+    """Live GPS status: fix type, satellites, position, speed, HDOP + nav-readiness.
+
+    Read-only (MSP_RAW_GPS, no reboot). Use this before relying on RTH or any
+    position-holding navigation mode.
+    """
+    conn = state.require_connection()
+    try:
+        gps = parse_raw_gps(conn.send_msp_v1(MSP_RAW_GPS))
+    except Exception as exc:
+        return {"error": f"Could not read GPS: {exc}"}
+    if not gps:
+        return {"gps": None,
+                "note": "No GPS data — the module may be absent or not configured. "
+                        "Use configure_gps() to enable it."}
+
+    fix  = gps.get("fix_type", 0)
+    sats = gps.get("num_sats", 0)
+    if fix >= 2 and sats >= 6:
+        readiness = f"3D fix with {sats} sats — ready for navigation modes."
+    elif fix >= 2:
+        readiness = f"3D fix but only {sats} sats — wait for 8+ before using nav modes."
+    elif fix == 1:
+        readiness = f"2D fix ({sats} sats) — not enough for nav; wait for a 3D fix."
+    else:
+        readiness = f"No fix ({sats} sats visible) — move to open sky; nav modes are unsafe."
+
+    return {
+        "gps":       gps,
+        "fix_type":  gps.get("fix_type_name"),
+        "num_sats":  sats,
+        "nav_ready": fix >= 2 and sats >= 6,
+        "readiness": readiness,
+    }
+
+
+@mcp.tool()
+def configure_gps(provider: str = "UBLOX", sbas: str | None = None, confirm: bool = False) -> dict:
+    """Enable the GPS feature and set the receiver provider / SBAS (atomic CLI write).
+
+    Args:
+        provider: GPS provider token — e.g. UBLOX | NMEA | MSP (the FC validates it).
+        sbas:     Optional SBAS mode — AUTO | EGNOS | WAAS | MSAS | GAGAN | NONE.
+        confirm:  True to apply (save+reboot). Dry-run otherwise.
+
+    Gates: connected, not armed, auto-backup. After applying, give the GPS time to
+    acquire satellites and check read_gps().
+    """
+    conn = state.require_connection()
+    commands = ["feature GPS", f"set gps_provider = {provider.strip().upper()}"]
+    if sbas is not None:
+        commands.append(f"set gps_sbas_mode = {sbas.strip().upper()}")
+
+    if not confirm:
+        return {
+            "dry_run":  True,
+            "commands": commands,
+            "message":  "Dry run — call configure_gps(..., confirm=True) to apply (save+reboot).",
+        }
+    return _apply_cli_writes(conn, commands, label="configure-gps", capture_after=False)
+
+
+@mcp.tool()
+def set_nav(
+    rth_altitude_m: float | None = None,
+    rth_climb_first: bool | None = None,
+    rth_allow_landing: str | None = None,
+    loiter_radius_m: float | None = None,
+    confirm: bool = False,
+) -> dict:
+    """Set core fixed-wing navigation / RTH parameters (atomic CLI write).
+
+    Only the arguments you pass are changed. Dry-run by default.
+
+    Args:
+        rth_altitude_m:    Return-to-home altitude, metres (nav_rth_altitude, stored cm).
+        rth_climb_first:   Climb to RTH altitude before heading home (nav_rth_climb_first).
+        rth_allow_landing: NEVER | ALWAYS | FS_ONLY (nav_rth_allow_landing).
+        loiter_radius_m:   Fixed-wing loiter radius, metres (nav_fw_loiter_radius, stored cm).
+        confirm:           True to apply (save+reboot). Dry-run otherwise.
+
+    Gates: connected, not armed, auto-backup. RTH needs a working GPS and a home fix.
+    """
+    conn = state.require_connection()
+    commands: list[str] = []
+    if rth_altitude_m is not None:
+        commands.append(f"set nav_rth_altitude = {max(0, int(round(rth_altitude_m * 100)))}")
+    if rth_climb_first is not None:
+        commands.append(f"set nav_rth_climb_first = {'ON' if rth_climb_first else 'OFF'}")
+    if rth_allow_landing is not None:
+        commands.append(f"set nav_rth_allow_landing = {rth_allow_landing.strip().upper()}")
+    if loiter_radius_m is not None:
+        commands.append(f"set nav_fw_loiter_radius = {max(0, int(round(loiter_radius_m * 100)))}")
+
+    if not commands:
+        return {"error": "Nothing to set — provide at least one nav parameter."}
+    if not confirm:
+        return {
+            "dry_run":  True,
+            "commands": commands,
+            "message":  "Dry run — call set_nav(..., confirm=True) to apply (save+reboot).",
+        }
+    return _apply_cli_writes(conn, commands, label="set-nav", capture_after=False)
+
+
+_PID_AXES  = ("roll", "pitch", "yaw")
+_PID_TERMS = ("p", "i", "d", "ff")
+
+
+@mcp.tool()
+def read_tuning() -> dict:
+    """Read fixed-wing PID gains, rates, and key filter cutoffs (via CLI).
+
+    Returns PIDs grouped by axis, plus rate and low-pass-filter settings.
+
+    NOTE: reads over CLI; exiting CLI reboots the FC, so this reboots and reconnects (~7s).
+    """
+    conn = state.require_connection()
+    conn.enter_cli()
+    try:
+        raw = "\n".join(
+            conn.run_cli(cmd, timeout=10.0) for cmd in ("get fw_", "get rate", "get lpf")
+        )
+    finally:
+        conn.exit_cli(save=False, reconnect=True)
+
+    settings = parse_get_output(raw)
+    pids: dict = {}
+    for axis in _PID_AXES:
+        terms = {t: settings[f"fw_{t}_{axis}"] for t in _PID_TERMS if f"fw_{t}_{axis}" in settings}
+        if terms:
+            pids[axis] = terms
+
+    rates   = {k: v for k, v in settings.items() if k.endswith("_rate")}
+    filters = {k: v for k, v in settings.items() if "lpf" in k}
+
+    return {
+        "pids":     pids,
+        "rates":    rates,
+        "filters":  filters,
+        "rebooted": True,
+        "note":     "Fixed-wing PIDs use P/I/D/FF; D is often 0. Change gains gradually.",
+    }
+
+
+@mcp.tool()
+def set_pid(
+    axis: str,
+    p: int | None = None,
+    i: int | None = None,
+    d: int | None = None,
+    ff: int | None = None,
+    confirm: bool = False,
+) -> dict:
+    """Set fixed-wing PID gains for ONE axis (atomic CLI write).
+
+    Changes only the terms you pass. Dry-run by default.
+
+    Args:
+        axis:     roll | pitch | yaw.
+        p, i, d, ff: Gains for fw_p_<axis> / fw_i_<axis> / fw_d_<axis> / fw_ff_<axis>.
+        confirm:  True to apply (save+reboot). Dry-run otherwise.
+
+    ⚠ PID changes alter flight behaviour — change gradually and test carefully.
+    Gates: connected, not armed, auto-backup.
+    """
+    conn = state.require_connection()
+    axis_l = axis.strip().lower()
+    if axis_l not in _PID_AXES:
+        return {"error": f"axis must be one of {list(_PID_AXES)} (got {axis!r})."}
+
+    terms = {"p": p, "i": i, "d": d, "ff": ff}
+    commands = [f"set fw_{t}_{axis_l} = {int(v)}" for t, v in terms.items() if v is not None]
+    if not commands:
+        return {"error": "Nothing to set — provide at least one of p/i/d/ff."}
+
+    if not confirm:
+        return {
+            "dry_run":  True,
+            "commands": commands,
+            "message":  f"Dry run — would set {len(commands)} gain(s) for {axis_l}. "
+                        "Call set_pid(..., confirm=True) to apply (save+reboot).",
+        }
+    return _apply_cli_writes(conn, commands, label=f"set-pid-{axis_l}", capture_after=False)
 
 
 # ── Resources (M5): read-only context Claude can pull ────────────────────────

@@ -27,6 +27,13 @@ MSP_BOXIDS        = 119
 MSP_STATUS_EX     = 150
 MSP_SENSOR_STATUS = 151
 
+# Action commands (FC replies with an empty ACK frame on success)
+MSP_ACC_CALIBRATION = 205   # calibrate accelerometer (board level + still)
+MSP_MAG_CALIBRATION = 206   # calibrate compass (rotate craft ~30s)
+MSP_SET_MOTOR       = 214   # live motor override (bench test) — 8×u16 µs values
+
+MAX_SUPPORTED_MOTORS = 8
+
 # MSP v2 (iNAV-specific). The iNAV Configurator reads arming flags exclusively
 # from this command — the legacy MSP_STATUS (101) is not used by 9.x tooling.
 MSPV2_INAV_STATUS = 0x2000   # 8192
@@ -145,6 +152,26 @@ def parse_fc_version(payload: bytes) -> dict:
     if len(payload) < 3:
         return {}
     return {"fw_version": f"{payload[0]}.{payload[1]}.{payload[2]}"}
+
+
+def firmware_major(fw_version: str | None) -> int | None:
+    """Return the major version int from a 'X.Y.Z' string (e.g. '6.1.0' -> 6)."""
+    if not fw_version:
+        return None
+    try:
+        return int(str(fw_version).split(".")[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def encode_motor_values(values: list[int]) -> bytes:
+    """Pack up to 8 motor outputs (µs) into an MSP_SET_MOTOR payload (8×u16 LE).
+
+    Each value is clamped to [1000, 2000]; missing motors default to 1000 (stop).
+    """
+    vals = [int(v) for v in values][:MAX_SUPPORTED_MOTORS]
+    vals += [1000] * (MAX_SUPPORTED_MOTORS - len(vals))
+    return struct.pack("<8H", *[max(1000, min(2000, v)) for v in vals])
 
 
 def parse_board_info(payload: bytes) -> dict:

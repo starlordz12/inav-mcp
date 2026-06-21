@@ -202,6 +202,8 @@ tools/               # gen_readme_tools.py — regenerates the tool reference be
 examples/            # flying_wing_quickstart.md — end-to-end walkthrough
 ```
 
+Release history is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Full tool reference
 
 Complete, signature-accurate list — regenerate after changing tools with

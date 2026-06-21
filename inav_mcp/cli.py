@@ -138,6 +138,19 @@ def is_write_command(cmd: str) -> bool:
     return any(c.startswith(p) for p in _WRITE_PREFIXES)
 
 
+# Commands that drive the CLI session lifecycle itself (commit/leave/reboot). A
+# batched CLI session manages save/exit on its own, so these must not appear in a
+# user-supplied batch — a mid-batch `save`/`exit`/`batch end` would reboot or
+# commit early and break the one-reboot-per-batch guarantee.
+_SESSION_CONTROL_VERBS: frozenset[str] = frozenset({"save", "exit", "batch"})
+
+
+def is_session_control_command(cmd: str) -> bool:
+    """Return True for save/exit/batch — commands the batch runner owns itself."""
+    tokens = cmd.strip().lower().split()
+    return bool(tokens) and tokens[0] in _SESSION_CONTROL_VERBS
+
+
 # Commands that drive a LIVE motor output the instant they run — `motor <index>
 # <value>` overrides a motor and spins it immediately while in CLI. These are
 # momentary bench tests, NOT persistent config: they gate on props-off (§10.1)

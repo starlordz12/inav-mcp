@@ -15,7 +15,10 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 
 from . import state
-from .cli import is_write_command, is_actuator_command, cli_error, is_replayable, parse_get_output
+from .cli import (
+    is_write_command, is_actuator_command, is_session_control_command,
+    cli_error, is_replayable, parse_get_output,
+)
 from .connection import SerialConnection
 from .msp import (
     MSP_API_VERSION,
@@ -558,6 +561,138 @@ def cli(command: str, confirm_for_writes: bool = False, props_removed: bool = Fa
     if is_write:
         return f"{output}\n\n[applied and SAVED; FC rebooted and reconnected]"
     return output
+
+
+@mcp.tool()
+def cli_batch(commands: list[str], confirm_for_writes: bool = False) -> dict:
+    """Run MANY CLI commands in ONE CLI session — a single reboot for the whole batch.
+
+    On iNAV, leaving the CLI ALWAYS reboots the FC, so every separate cli() call
+    costs a full reboot + USB re-enumeration + reconnect (~7s). Doing a run of
+    commands one cli() call at a time means one reboot PER command — the rapid
+    reboot cadence is disruptive and can even knock the board into DFU/bootloader
+    mode. This collapses N commands into ONE session = ONE reboot. Prefer it for
+    any ad-hoc multi-command work (several `get` reads, or several `set` writes).
+    (The dedicated write tools — apply_aircraft_setup, set_flight_mode, etc. —
+    already batch internally; this is the escape hatch for everything else.)
+
+    Behaviour:
+      - All read-only batch (get/diff/dump/status/tasks/version): the session
+        exits WITHOUT saving — no EEPROM write, nothing persists. Still one reboot
+        (unavoidable on iNAV), but reads are free of a save.
+      - Any write (set/aux/feature/…): requires confirm_for_writes=True; a backup
+        is taken first and the whole batch is SAVED once at the end (persist +
+        reboot). If ANY command is rejected by the FC, the batch exits WITHOUT
+        saving so nothing partial persists (all-or-nothing).
+      - Live `motor` commands and session-control verbs (save/exit/batch) are
+        rejected up front — motor tests must never be saved (use cli(...,
+        props_removed=True) / test_motor()), and the batch manages save/exit itself.
+
+    Args:
+        commands:           Ordered list of CLI commands to run in one session.
+        confirm_for_writes: Set True to run and persist a batch containing writes.
+
+    Returns per-command output, whether it saved, the backup path (if it wrote),
+    and the measured reboot/reconnect seconds for the single reboot.
+    """
+    conn = state.require_connection()
+    cmds = [c.strip() for c in commands if c and c.strip()]
+    if not cmds:
+        return {"error": "No commands given.", "results": []}
+
+    # Reject things that violate the batch's invariants BEFORE any serial I/O.
+    actuators = [c for c in cmds if is_actuator_command(c)]
+    if actuators:
+        return {
+            "error": (
+                "Live 'motor' commands cannot run in a batch: a batch with writes is "
+                "SAVED, and a momentary motor test must never be persisted. Use "
+                "cli(command, props_removed=True) or test_motor() instead."
+            ),
+            "rejected_commands": actuators,
+        }
+    session_control = [c for c in cmds if is_session_control_command(c)]
+    if session_control:
+        return {
+            "error": (
+                "Remove save/exit/batch commands — cli_batch manages the CLI session "
+                "and its single save/exit itself. Adding them would reboot or commit "
+                "mid-batch and break the one-reboot guarantee."
+            ),
+            "rejected_commands": session_control,
+        }
+
+    writes    = [c for c in cmds if is_write_command(c)]
+    has_write = bool(writes)
+
+    if has_write and not confirm_for_writes:
+        return {
+            "dry_run":        True,
+            "saved":          False,
+            "commands":       cmds,
+            "write_commands": writes,
+            "message": (
+                f"{len(writes)} of {len(cmds)} command(s) are writes. Set "
+                "confirm_for_writes=True to run and SAVE the batch (one reboot, backup "
+                "taken first). Read-only batches run without confirmation."
+            ),
+        }
+
+    if has_write:
+        check_not_armed(conn)   # §10.2 — writes refuse while armed
+
+    # ── One CLI session: enter → (backup) → run all → save/exit once → reconnect ──
+    conn.enter_cli()
+    backup_path: str | None = None
+    results:  list[dict] = []
+    rejected: list[str]  = []
+    reboot_seconds: float | None = None
+    completed = False
+    try:
+        if has_write:
+            before = conn.run_cli("diff all", timeout=20.0)
+            backup_path = _write_backup_file(before, "pre-cli-batch")["backup_path"]
+        for cmd in cmds:
+            out = conn.run_cli(cmd, timeout=15.0)
+            err = cli_error(out)   # iNAV rejects silently — detect '### ERROR'
+            if err:
+                rejected.append(cmd)
+            results.append({"command": cmd, "output": out, "rejected": bool(err)})
+        completed = True
+    finally:
+        # Save only a fully-successful write batch: every command ran AND none was
+        # rejected. Reads never save; any rejection or mid-session error discards
+        # the whole batch (all-or-nothing). Either path reboots once; we reconnect.
+        save = has_write and completed and not rejected
+        reboot_seconds = conn.exit_cli(save=save, reconnect=True)
+
+    if has_write and rejected:
+        note = (
+            f"{len(rejected)} command(s) REJECTED by the FC — the batch exited WITHOUT "
+            "saving, so NOTHING was persisted (all-or-nothing). See 'rejected'."
+        )
+    elif save:
+        note = (
+            f"Ran {len(cmds)} command(s) and SAVED once (persist + reboot + reconnect). "
+            "One reboot for the whole batch."
+        )
+    else:
+        note = (
+            f"Read-only batch: ran {len(cmds)} command(s) and exited without saving "
+            "(no EEPROM write). One reboot for the whole batch — on iNAV every CLI "
+            "session reboots, so batching reads is how you avoid per-read reboots."
+        )
+
+    return {
+        "results":        results,
+        "command_count":  len(cmds),
+        "saved":          save,
+        "rejected":       rejected,
+        "backup_path":    backup_path,
+        "rebooted":       True,
+        "reboot_seconds": round(reboot_seconds, 1) if reboot_seconds else None,
+        "note":           note,
+    }
 
 
 @mcp.tool()

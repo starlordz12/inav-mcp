@@ -2,7 +2,10 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from inav_mcp.cli import strip_cli_response, is_write_command, cli_error, is_replayable
+from inav_mcp.cli import (
+    strip_cli_response, is_write_command, cli_error, is_replayable,
+    is_session_control_command,
+)
 
 
 # ── is_replayable ─────────────────────────────────────────────────────────────
@@ -131,6 +134,18 @@ def test_read_partial_match_not_flagged():
     # 'set' as part of a longer token should not match 'set ' (note the space in prefix)
     # 'status' starts with 'stat', not 'set ' — should be read-only
     assert is_write_command("status") is False
+
+
+# ── is_session_control_command (owned by the batch runner) ─────────────────────
+
+def test_session_control_detects_lifecycle_verbs():
+    for cmd in ["save", "exit", "batch start", "batch end", "SAVE", "Exit"]:
+        assert is_session_control_command(cmd) is True, cmd
+
+
+def test_session_control_excludes_normal_commands():
+    for cmd in ["set foo = 1", "get motor_poles", "diff all", "aux 0 0 0 1700 2100"]:
+        assert is_session_control_command(cmd) is False, cmd
 
 
 if __name__ == "__main__":

@@ -31,12 +31,13 @@ def test_prompts_registered():
 def test_tool_count_and_new_tools_registered():
     tools = _run(mcp.list_tools())
     names = {t.name for t in tools}
-    assert len(tools) == 34
-    # M6 + follow-up + nav/tuning additions
+    assert len(tools) == 35
+    # M6 + follow-up + nav/tuning + reboot-churn additions
     for expected in (
         "test_motor", "calibrate_accelerometer", "calibrate_magnetometer",
         "check_failsafe", "set_failsafe", "list_backups", "find_fc",
         "read_gps", "configure_gps", "set_nav", "read_tuning", "set_pid",
+        "cli_batch",
     ):
         assert expected in names, f"missing tool: {expected}"
 

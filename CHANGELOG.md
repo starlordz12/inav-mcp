@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+Reboot-churn reduction. On iNAV, **leaving the CLI always reboots the FC** (both
+`exit` and `save`), so a run of one-command `cli()` calls means one reboot *per
+command*. A real config session of rapid `get`/`set` calls knocked a SpeedyBee
+F405 Wing into STM32 DFU/bootloader mode mid-session; this release cuts the reboot
+cadence and makes recovery graceful. Tools **34 → 35**; tests **168 → 186** (all
+offline).
+
+### Added
+- **`cli_batch(commands, confirm_for_writes=False)`** — run many CLI commands in
+  **one** session = **one** reboot, instead of one reboot per `cli()` call. A
+  read-only batch exits without saving (no EEPROM write); a write batch backs up,
+  applies, and saves once, rolling the whole batch back if any command is rejected
+  (all-or-nothing). Live `motor` and session-control (`save`/`exit`/`batch`)
+  commands are refused up front, and the armed-guard applies to write batches.
+- **Re-enumeration-aware, DFU-aware reconnect.** After a reboot, `reconnect()` now
+  waits a short settle, polls with backoff, and — if the original COM port doesn't
+  return — scans for a re-enumerated FC port and adopts it. If the board came back
+  in STM32 DFU/bootloader mode (or nothing answers), it raises with explicit
+  "power-cycle the board" guidance instead of a bare timeout.
+- **Measured reboot cost.** `exit_cli()`/`reconnect()` return the elapsed
+  reconnect seconds; `cli_batch()` surfaces it as `reboot_seconds` so callers can
+  see the per-reboot cost and justify batching.
+
+### Changed
+- README gains a **"Reboot model"** section documenting why every CLI round-trip
+  costs a reboot, which reads are MSP-only (no reboot), and how the write tools and
+  `cli_batch()` keep churn down.
+
+### Notes
+- The dedicated write tools (`apply_aircraft_setup`, `set_flight_mode`,
+  `assign_switch`, `set_pid`, `set_failsafe`, `restore_config`, …) were **already**
+  batching into a single save+reboot session — verified, unchanged. Read-only reads
+  already prefer MSP (which never reboots); only genuinely CLI-only reads
+  (`diff all`, `get failsafe`, PID/rate/filter `get`s) still pay one reboot, and
+  those that issue several `get`s already share one session.
+- All existing safety gates (props-removed, armed-guard, auto-backup, dry-run,
+  read-back verify) are intact.
+- **Bench-verified on real hardware (2026-06-21, SpeedyBee F405 Wing, iNAV 6.1.0):**
+  `cli_batch`'s read path (6 reads → one reboot, no EEPROM write) and write path
+  (pre-write backup + FC `### ERROR` detection + all-or-nothing rollback, nothing
+  persisted) both confirmed against the FC. The automated 186-test suite stays
+  offline; this was a manual on-bench check.
 
 ## [0.2.0] - 2026-06-20
 

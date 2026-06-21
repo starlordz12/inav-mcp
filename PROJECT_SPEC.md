@@ -97,13 +97,16 @@ This also sidesteps a common confusion: iNAV's "MSP RX (control via MSP)" receiv
 1. Send `#` followed by a carriage return.
 2. FC prints a banner and a `# ` prompt; reads suspend MSP parsing while in CLI.
 3. Send each command terminated with `\r`; read until the `# ` prompt returns (that's your response boundary). Add a timeout + max-bytes guard.
-4. Leave CLI with **`exit`** (discards unsaved changes, returns to MSP) or **`save`** (writes to EEPROM and **reboots** — connection drops; plan a reconnect).
+4. Leave CLI with **`exit`** (discards unsaved changes) or **`save`** (writes to EEPROM).
+
+> **Empirically confirmed on iNAV (corrects the original assumption above):** **BOTH `exit` and `save` reboot the FC.** Leaving the CLI by any path drops the USB VCP, which re-enumerates (~6–8 s) before MSP answers again — there is *no* way to leave the CLI without a reboot. So **every CLI round-trip costs one reboot**, including read-only `get`/`diff`/`dump`/`version`. Implications enforced in the build: (a) reads prefer MSP, which never reboots; (b) writes batch into one session = one reboot; (c) an ad-hoc batch entry point (`cli_batch`) runs many commands in one session; (d) a real session of rapid one-command `cli()` calls can knock the board into **STM32 DFU/bootloader mode** — recoverable only by a USB power-cycle — so the reconnect path is settle-/backoff-/re-enumeration-/DFU-aware. See README "Reboot model".
 
 Rules:
 - Never interleave MSP and CLI on the same handle without switching `mode` first.
 - `enter_cli()` / `run_cli(cmd) -> str` / `exit_cli(save: bool=False)`.
-- After `save`, mark the connection stale and require an explicit reconnect.
+- After **either** `exit` or `save`, mark the connection stale and reconnect (the FC reboots either way).
 - A small response parser strips the echoed command and the trailing prompt.
+- Minimise CLI sessions: batch commands (`cli_batch`, the dedicated write tools) and read live data over MSP rather than the CLI wherever possible.
 
 ---
 

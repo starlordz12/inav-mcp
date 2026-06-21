@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
+[![PyPI](https://img.shields.io/pypi/v/inav-mcp.svg)](https://pypi.org/project/inav-mcp/)
 
 An [MCP](https://modelcontextprotocol.io) server that lets Claude configure,
 diagnose, and troubleshoot an **iNAV fixed-wing flight controller** over USB.
@@ -12,6 +13,10 @@ It talks to the FC through a single serial connection, using the iNAV **CLI**
 for configuration writes and a small built-in **MSP** codec for live/binary
 reads. Every write is dry-run by default, auto-backs-up first, refuses while the
 board is armed, and reads back to verify.
+
+![Example iNAV MCP session — Claude diagnosing why a flight controller won't arm](assets/demo.svg)
+
+<sub>Illustrative example. Swap in a real recording by replacing `assets/demo.svg` (e.g. ScreenToGif on Windows, or terminalizer / asciinema).</sub>
 
 > ⚠️ **Safety:** Always remove props from the aircraft before any motor test.
 > This tool never switches the FC into MSP-RX mode and never arms the aircraft.
@@ -25,6 +30,14 @@ board is armed, and reads back to verify.
 - The serial port the FC enumerates as (e.g. `COM3` on Windows, `/dev/ttyACM0` on Linux)
 
 ## Install
+
+**From PyPI** (once the first release is published):
+
+```bash
+pip install inav-mcp
+```
+
+**From source** (for development, or to run the latest unreleased code):
 
 ```bash
 # from the repo root

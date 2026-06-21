@@ -1,10 +1,13 @@
 name: Publish to PyPI
 
-# Builds the package and publishes it to PyPI when a GitHub Release is published.
-# release.yml already creates a Release from a vX.Y.Z tag, so the full flow is:
-#   git tag v0.3.1 && git push --tags
-#     -> release.yml publishes a GitHub Release
-#     -> this workflow builds and uploads to PyPI
+# Builds the package and publishes it to PyPI on a vX.Y.Z tag push.
+# Pushing a tag fires this workflow AND release.yml in parallel:
+#   git tag v0.3.1 && git push origin v0.3.1
+#     -> release.yml publishes a GitHub Release (notes from CHANGELOG)
+#     -> this workflow builds + uploads to PyPI
+# Triggering on the tag push directly (not on release: published) avoids GitHub's
+# rule that a release created by GITHUB_TOKEN can't trigger other workflows.
+# workflow_dispatch is kept as a manual fallback.
 #
 # ONE-TIME SETUP (no API token needed — uses PyPI Trusted Publishing / OIDC):
 #   1. Make sure the project name "inav-mcp" is available / owned by you on PyPI.
@@ -18,8 +21,8 @@ name: Publish to PyPI
 #      required reviewers for a manual approval gate before each publish.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:

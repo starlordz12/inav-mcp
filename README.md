@@ -39,6 +39,21 @@ For development (tests):
 .venv/Scripts/python -m pip install -e ".[dev]"
 ```
 
+### Try it without a flight controller
+
+You don't need any hardware to confirm the project works — the test suite runs
+fully offline (no FC required):
+
+```bash
+.venv/Scripts/python -m pytest        # Windows
+# .venv/bin/pytest                     # Linux/macOS
+```
+
+All 186 tests should pass. To actually **use** the server, though, you need a
+flight controller flashed with **iNAV firmware** (developed against iNAV
+8.x/9.x) connected over USB — without one, the connection tools have nothing to
+talk to.
+
 ## Register with Claude
 
 Add the server to your Claude (Code or Desktop) MCP config

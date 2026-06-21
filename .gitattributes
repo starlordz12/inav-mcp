@@ -1,0 +1,7 @@
+# Normalize line endings: store LF in the repo, consistent across OSes.
+* text=auto eol=lf
+
+# Treat known binaries as binary (no EOL munging).
+*.png binary
+*.jpg binary
+*.ico binary

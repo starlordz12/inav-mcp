@@ -1,5 +1,10 @@
 # iNAV MCP Server
 
+[![CI](https://github.com/starlordz12/inav-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/starlordz12/inav-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
+
 An [MCP](https://modelcontextprotocol.io) server that lets Claude configure,
 diagnose, and troubleshoot an **iNAV fixed-wing flight controller** over USB.
 

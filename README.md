@@ -41,16 +41,34 @@ For development (tests):
 
 ## Register with Claude
 
-Add the server to your Claude (Code or Desktop) MCP config. Example
-(`~/.claude/settings.json` or the Claude Desktop config):
+Add the server to your Claude (Code or Desktop) MCP config
+(`~/.claude/settings.json` or the Claude Desktop config). **Replace the paths
+below with wherever you cloned this repo** — the `command` points at the Python
+inside your `.venv`, and `cwd` is the repo root.
+
+Windows:
 
 ```json
 {
   "mcpServers": {
     "inav": {
-      "command": "C:\\dev\\inav-mcp\\.venv\\Scripts\\python.exe",
+      "command": "C:\\path\\to\\inav-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "inav_mcp.server"],
-      "cwd": "C:\\dev\\inav-mcp"
+      "cwd": "C:\\path\\to\\inav-mcp"
+    }
+  }
+}
+```
+
+Linux / macOS:
+
+```json
+{
+  "mcpServers": {
+    "inav": {
+      "command": "/path/to/inav-mcp/.venv/bin/python",
+      "args": ["-m", "inav_mcp.server"],
+      "cwd": "/path/to/inav-mcp"
     }
   }
 }

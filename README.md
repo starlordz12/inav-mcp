@@ -14,9 +14,9 @@ for configuration writes and a small built-in **MSP** codec for live/binary
 reads. Every write is dry-run by default, auto-backs-up first, refuses while the
 board is armed, and reads back to verify.
 
-![Example iNAV MCP session — Claude diagnosing why a flight controller won't arm](assets/demo.svg)
+![iNAV MCP session — Claude finding the flight controller and reading its status over USB](https://raw.githubusercontent.com/starlordz12/inav-mcp/master/assets/demo.gif)
 
-<sub>Illustrative example. Swap in a real recording by replacing `assets/demo.svg` (e.g. ScreenToGif on Windows, or terminalizer / asciinema).</sub>
+<sub>Recorded against a live iNAV 6.1.0 flight controller over USB.</sub>
 
 > ⚠️ **Safety:** Always remove props from the aircraft before any motor test.
 > This tool never switches the FC into MSP-RX mode and never arms the aircraft.

@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.starlordz12/inav-mcp -->
+
 # iNAV MCP Server
 
 [![CI](https://github.com/starlordz12/inav-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/starlordz12/inav-mcp/actions/workflows/ci.yml)

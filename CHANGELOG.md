@@ -7,27 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-06-23
+## [0.3.3] - 2026-06-23
 
-First stable release. The tool surface and safety model are now considered
-stable, and the project follows Semantic Versioning from here — breaking changes
-to tool names or signatures will bump the major version.
-
-No change to the runtime behaviour since 0.3.x: still **35 tools** backed by a
-real serial/MSP/CLI connection to the flight controller, and **186 offline
-tests** (no hardware required to verify the build). This release marks the
-project as production-ready and adds adoption-focused documentation.
+Documentation and release-pipeline shakedown ahead of the **1.0.0** milestone.
+No runtime changes — still **35 tools** backed by the real serial/MSP/CLI
+connection to the flight controller, and **186 offline tests**. This release
+doubles as an end-to-end test of the tag → PyPI + GitHub Release automation
+before the irreversible 1.0.0 is cut (planned once the hardware demo is verified).
 
 ### Added
 - **README roadmap & call-to-action:** a "Roadmap" section noting that more tools
   are actively in development and inviting tool requests, plus a "Contributing &
   feedback" section (star / open an issue / submit PRs against the fully-offline
   test suite).
-
-### Changed
-- Promoted to **1.0.0** to signal a stable, supported tool API. The CLI-first
-  write path, MSP-first reads, and the safety gates (props-off, armed-guard,
-  auto-backup, dry-run, read-back verify) are the committed public contract.
 
 ## [0.3.1] - 2026-06-21
 

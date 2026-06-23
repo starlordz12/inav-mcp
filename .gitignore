@@ -34,3 +34,7 @@ Thumbs.db
 
 # Local hardware bring-up scratch harness (not part of the package)
 hwtest.py
+
+# MCP Registry publisher CLI (downloaded tool, not source)
+mcp-publisher.exe
+mcp-publisher.tar.gz

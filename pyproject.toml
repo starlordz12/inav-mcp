@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inav-mcp"
-version = "0.3.1"
+version = "0.3.2"
 description = "MCP server for iNAV flight-controller configuration and diagnostics"
 readme = "README.md"
 license = "MIT"
@@ -21,6 +21,10 @@ dev = [
 
 [project.scripts]
 inav-mcp = "inav_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/starlordz12/inav-mcp"
+Repository = "https://github.com/starlordz12/inav-mcp"
 
 [tool.setuptools.packages.find]
 where = ["."]

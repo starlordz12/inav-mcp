@@ -71,3 +71,7 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # 0.3.2 was first uploaded manually; tag-triggered re-runs (and any
+          # future already-published version) become a no-op instead of failing.
+          skip-existing: true

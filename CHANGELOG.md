@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-23
+
+Distribution & discoverability release — now listed on the official **MCP
+Registry**. No functional or runtime changes to the server (still 35 tools, 186
+offline tests).
+
+### Added
+- **Listed on the [MCP Registry](https://registry.modelcontextprotocol.io)** as
+  `io.github.starlordz12/inav-mcp`. Adds a `server.json` manifest and an
+  `mcp-name` ownership marker in the README (validated against the live PyPI
+  description), plus `Homepage`/`Repository` URLs in the PyPI project metadata.
+- Real README **demo GIF** (`assets/demo.gif`) recorded against a live iNAV
+  6.1.0 flight controller over USB, replacing the illustrative `assets/demo.svg`
+  placeholder.
+
 ## [0.3.1] - 2026-06-21
 
 Distribution & polish release — first version published to PyPI. No functional or
@@ -130,7 +145,8 @@ Initial release — milestones M0–M5, hardware-verified against a SpeedyBee F4
   built-in MSP v1/v2 codec (no GPL runtime dependencies — MIT licensed).
 - 134 offline tests.
 
-[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/starlordz12/inav-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/starlordz12/inav-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/starlordz12/inav-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/starlordz12/inav-mcp/compare/v0.1.0...v0.2.0

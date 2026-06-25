@@ -1,5 +1,5 @@
 {
-  "_source": "iNAV docs + src/main/fc/box.c. Fixed-wing relevance noted.",
+  "_source": "iNAV docs + src/main/fc/box.c. Fixed-wing relevance noted. Keys verified against live MSP_BOXNAMES on iNAV 6.1.0 (SPEEDYBEEF405WING) 2026-06-25 — box names can drift between major versions (e.g. 'AUTO TUNE'→'AUTOTUNE', 'AUTO LEVEL'→'AUTO LEVEL TRIM' on 9.x), so this glossary is keyed to 6.x names.",
   "ARM": {
     "description": "Arms the flight controller, enabling motor output.",
     "fixed_wing": "essential",
@@ -50,11 +50,6 @@
     "fixed_wing": "optional",
     "notes": "Requires compass. Useful for long-range FPV."
   },
-  "HEADFREE": {
-    "description": "Headfree / carefree mode — stick directions are relative to pilot, not aircraft.",
-    "fixed_wing": "rare",
-    "notes": "Not commonly used on fixed wing."
-  },
   "TURN ASSIST": {
     "description": "Coordinated-turn assistance — automates rudder during banked turns.",
     "fixed_wing": "recommended",
@@ -65,10 +60,10 @@
     "fixed_wing": "useful",
     "notes": "Activate for a few seconds in level flight to auto-trim. Saves to config."
   },
-  "OSD SW": {
-    "description": "Toggle OSD display on/off.",
+  "OSD OFF": {
+    "description": "Switches the OSD overlay off (hides all OSD elements).",
     "fixed_wing": "optional",
-    "notes": "Useful if you want to hide OSD for recording."
+    "notes": "Board box name is 'OSD OFF' on iNAV 6.x (was 'OSD SW' on older versions). Useful to hide the OSD for clean DVR recording."
   },
   "BEEPER": {
     "description": "Activates the FC buzzer to help locate a lost model.",
@@ -93,21 +88,41 @@
   "AUTO TUNE": {
     "description": "Automatic PID tuning mode.",
     "fixed_wing": "advanced",
-    "notes": "Fly in a safe area with plenty of altitude. Requires stable conditions."
-  },
-  "BRAKING": {
-    "description": "Increases drag to slow the aircraft in GPS-assisted modes.",
-    "fixed_wing": "N/A",
-    "notes": "Primarily for multirotors."
+    "notes": "Board box name is 'AUTO TUNE' on iNAV 6.x (renamed 'AUTOTUNE' on 9.x). Fly in a safe area with plenty of altitude. Requires stable conditions."
   },
   "NAV LAUNCH": {
     "description": "Hand-launch detection — waits for throw, then applies motor/elevator.",
     "fixed_wing": "recommended",
-    "notes": "Great for flying wings without landing gear. Configure 'nav_fw_launch_*' settings."
+    "notes": "Great for flying wings without landing gear. Configure 'nav_fw_launch_*' settings. Note: on a fixed-wing target this is usually auto-triggered on arm and may not appear as an assignable box unless enabled — it is not in the active box list on the 6.1.0 SP4W."
   },
   "CAMSTAB": {
     "description": "Camera stabilisation — uses gimbal outputs to level a camera mount.",
     "fixed_wing": "optional",
     "notes": "Requires configured gimbal servo outputs."
+  },
+  "AUTO LEVEL": {
+    "description": "Auto Level Trim — in-flight auto-tuning of the pitch trim offset a fixed-wing needs to fly straight and level.",
+    "fixed_wing": "useful",
+    "notes": "Board box name is 'AUTO LEVEL' on iNAV 6.x (renamed 'AUTO LEVEL TRIM' on 9.x). Hold level flight briefly with this active to capture the pitch offset."
+  },
+  "SOARING": {
+    "description": "Soaring mode — cuts the motor and holds altitude/attitude for thermalling in sailplanes and motor gliders.",
+    "fixed_wing": "optional",
+    "notes": "Glider-oriented. Requires baro; pairs well with ALTHOLD / cruise nav modes."
+  },
+  "NAV COURSE HOLD": {
+    "description": "Course hold — holds a GPS ground course (heading-over-ground) while you keep pitch/throttle control.",
+    "fixed_wing": "recommended",
+    "notes": "Requires GPS. Great for relaxed FPV cruising; the fixed-wing equivalent of a heading lock."
+  },
+  "FLAPERON": {
+    "description": "Flaperon — droops both ailerons by a preset offset to act as flaps for slower, steeper approaches.",
+    "fixed_wing": "optional",
+    "notes": "Set the throw via 'flaperon_throw_offset'. Useful for landing on conventional wings; not typically needed on flying wings."
+  },
+  "PREARM": {
+    "description": "Prearm — a safety gate that must be active before ARM will engage, preventing accidental arming.",
+    "fixed_wing": "safety",
+    "notes": "Assign to a momentary or second switch. ARM is refused (with a prearm error) until PREARM is active."
   }
 }

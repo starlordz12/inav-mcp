@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-25
+
+Knowledge-base correctness patch. The fixed-wing mode glossary
+(`knowledge/modes_reference.json`) was reconciled against the live `MSP_BOXNAMES`
+list read from a real iNAV 6.1.0 board (SpeedyBee F405 Wing), fixing entries whose
+keys never matched the firmware's actual box names. No code, tool, or safety
+changes (still 35 tools, 186 offline tests).
+
+### Fixed
+- **`OSD SW` → `OSD OFF`:** the glossary key never matched the firmware box name on
+  iNAV 6.x, so the OSD-toggle description silently failed to attach to the mode.
+  Renamed to the actual box name.
+
+### Changed
+- Removed `BRAKING` and `HEADFREE` — neither is exposed as a box on fixed-wing
+  targets (braking is multirotor-only, as `MC BRAKING`; HEADFREE is MC-only).
+- Added fixed-wing-relevant modes that were missing from the glossary: `AUTO LEVEL`
+  (auto level trim), `SOARING`, `NAV COURSE HOLD`, `FLAPERON`, and `PREARM`.
+- Documented cross-version box-name drift in the notes and `_source` (e.g.
+  `AUTO TUNE`→`AUTOTUNE`, `AUTO LEVEL`→`AUTO LEVEL TRIM` on iNAV 9.x). The glossary
+  is keyed to 6.x box names; runtime `MSP_BOXNAMES` resolution — not this static
+  file — remains the source of truth for mode assignment.
+
 ## [0.3.2] - 2026-06-23
 
 Distribution & discoverability release — now listed on the official **MCP
@@ -145,7 +168,8 @@ Initial release — milestones M0–M5, hardware-verified against a SpeedyBee F4
   built-in MSP v1/v2 codec (no GPL runtime dependencies — MIT licensed).
 - 134 offline tests.
 
-[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/starlordz12/inav-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/starlordz12/inav-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/starlordz12/inav-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/starlordz12/inav-mcp/compare/v0.2.0...v0.3.0

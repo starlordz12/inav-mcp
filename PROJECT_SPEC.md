@@ -1,6 +1,6 @@
 # iNAV MCP Server — Project Spec & Build Plan
 
-**What this is:** a single, self-contained spec for an MCP server that lets Claude set up, configure, and troubleshoot an **iNAV** fixed-wing flight controller over USB — driven by plain-English requests like *"set this up as a flying wing with a 2207 1800KV on DSHOT600 and 4S,"* *"put ANGLE/HORIZON/MANUAL on my 3-position switch,"* or *"why won't it arm?"*
+**What this is:** a single, self-contained spec for an MCP server that lets Claude set up, configure, and troubleshoot an **iNAV** flight controller over USB — primarily for **flying wings** (elevon FPV wings like the TBS Chupito / Mojito), and also conventional fixed-wing planes — driven by plain-English requests like *"set this up as a flying wing with a 2207 1800KV on DSHOT600 and 4S,"* *"put ANGLE/HORIZON/MANUAL on my 3-position switch,"* or *"why won't it arm?"*
 
 **How to use this file:** drop it into an empty repo as `PROJECT_SPEC.md`, then paste the kickoff prompt in §1 into Claude Code. Claude Code reads the rest of this file and builds the project against the milestones in §11.
 

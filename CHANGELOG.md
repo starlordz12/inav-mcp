@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-25
+
+Positioning / docs release — makes explicit that this server is built **primarily
+for flying wings** (elevon FPV wings like the TBS Chupito and Mojito), with
+conventional fixed-wing as a supported secondary. No code, tool, or behaviour
+changes (still 35 tools, 186 offline tests).
+
+### Changed
+- Reframed the project around **flying-wing-first** usage: the PyPI summary, the
+  README intro, the MCP server `instructions` string (what MCP clients display),
+  and `PROJECT_SPEC`. Tool behaviour is unchanged — `suggest_mode_layout`, the
+  mode glossary, and the setup flow already lead with flying-wing needs (elevon
+  mixing, hand-launch, CG sensitivity).
+
 ## [0.3.3] - 2026-06-25
 
 Knowledge-base correctness patch. The fixed-wing mode glossary
@@ -168,7 +182,8 @@ Initial release — milestones M0–M5, hardware-verified against a SpeedyBee F4
   built-in MSP v1/v2 codec (no GPL runtime dependencies — MIT licensed).
 - 134 offline tests.
 
-[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/starlordz12/inav-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/starlordz12/inav-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/starlordz12/inav-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/starlordz12/inav-mcp/compare/v0.3.0...v0.3.1

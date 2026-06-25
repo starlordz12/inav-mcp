@@ -51,8 +51,10 @@ from .msp import (
 mcp = FastMCP(
     "iNAV Flight Controller",
     instructions=(
-        "Tools for configuring, diagnosing, and troubleshooting an iNAV fixed-wing "
-        "flight controller over USB.\n\n"
+        "Tools for configuring, diagnosing, and troubleshooting an iNAV flight "
+        "controller over USB — built primarily for flying wings (elevon FPV wings "
+        "like the TBS Chupito / Mojito) and also for conventional fixed-wing planes."
+        "\n\n"
         "WORKFLOW: call list_serial_ports() to find the port, then connect(port). "
         "All other tools require an active connection.\n\n"
         "SAFETY: a live motor test via cli('motor ...') can spin a propeller — it "

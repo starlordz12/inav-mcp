@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inav-mcp"
-version = "0.3.3"
-description = "MCP server for iNAV flight-controller configuration and diagnostics"
+version = "0.3.4"
+description = "MCP server for configuring and diagnosing iNAV flying-wing (and fixed-wing) flight controllers"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

@@ -9,7 +9,9 @@
 [![PyPI](https://img.shields.io/pypi/v/inav-mcp.svg)](https://pypi.org/project/inav-mcp/)
 
 An [MCP](https://modelcontextprotocol.io) server that lets Claude configure,
-diagnose, and troubleshoot an **iNAV fixed-wing flight controller** over USB.
+diagnose, and troubleshoot an **iNAV flight controller** over USB — built
+**primarily for flying wings** (elevon FPV wings like the TBS Chupito and
+Mojito), and also for conventional fixed-wing planes.
 
 It talks to the FC through a single serial connection, using the iNAV **CLI**
 for configuration writes and a small built-in **MSP** codec for live/binary

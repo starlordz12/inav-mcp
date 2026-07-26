@@ -14,6 +14,18 @@ from .cli import strip_cli_response
 # Max bytes we'll buffer while waiting for the CLI prompt before giving up.
 _CLI_MAX_BYTES = 128 * 1024  # 128 KB is plenty for a full `dump all`
 
+# Quiet window (seconds) used to confirm a CLI prompt candidate. 'diff'/'dump'
+# output is full of comment lines that BEGIN with '# ', so a read boundary can
+# make the buffer tail look like the prompt mid-stream. The real prompt is
+# followed by silence; mid-output the FC keeps streaming within milliseconds.
+_PROMPT_QUIET_S = 0.15
+
+# Sanity bound on the claimed MSP v2 payload length. The largest real iNAV
+# response (BOXNAMES) is well under 2 KB; a corrupted 16-bit length field can
+# claim up to 65535 and stall a full read timeout per bad frame. Anything this
+# large is line noise — skip it and keep scanning.
+_MSP_V2_MAX_PAYLOAD = 8192
+
 # Substrings that mark a USB-serial / CDC device worth probing for an FC after a
 # reboot (kept in sync with server._FC_PORT_HINTS — duplicated here to avoid a
 # circular import: server imports connection, not the other way round).
@@ -240,6 +252,8 @@ class SerialConnection:
                 if len(header) < 5:
                     continue
                 length = struct.unpack_from("<H", header, 3)[0]
+                if length > _MSP_V2_MAX_PAYLOAD:
+                    continue   # corrupt length field — treat as noise, keep scanning
                 rest = self._ser.read(length + 1)  # payload + CRC
                 if len(rest) < length + 1:
                     continue
@@ -325,8 +339,32 @@ class SerialConnection:
 
     # ── CLI mode ──────────────────────────────────────────────────────────────
 
+    def _read_quiet(self, window: float) -> bytes:
+        """Read whatever arrives within `window` seconds (b'' if the line stays quiet).
+
+        Temporarily shortens the serial timeout so confirming a prompt costs at
+        most `window`, not the full per-read timeout.
+        """
+        old = self._ser.timeout
+        try:
+            self._ser.timeout = window
+            return self._ser.read(64)
+        finally:
+            self._ser.timeout = old
+
     def _read_until_prompt(self, timeout: float = 5.0) -> str:
         """Read bytes from the serial port until the CLI prompt '# ' appears.
+
+        A tail of '# ' alone is NOT trusted: 'diff'/'dump' output is full of
+        comment lines that begin with '# ' ('# version', '# mixer', …), and a
+        read boundary can land right after one, making a mid-stream tail look
+        exactly like the prompt — returning there would silently truncate the
+        output (worst case: an incomplete backup). The real prompt is followed
+        by silence, so each candidate is confirmed with a short quiet window
+        (_PROMPT_QUIET_S); if more bytes arrive, it was a comment line and we
+        keep reading. An FC stall longer than the quiet window at exactly such
+        a boundary could still fool this — the window trades that residual risk
+        against per-command latency.
 
         Returns the full raw string including the prompt.
         Raises TimeoutError if the prompt doesn't arrive within `timeout` seconds.
@@ -337,17 +375,21 @@ class SerialConnection:
         buf = bytearray()
 
         while time.monotonic() < deadline:
-            chunk = self._ser.read(64)
-            if not chunk:
-                continue
-            buf.extend(chunk)
+            if buf.endswith(b"# "):
+                extra = self._read_quiet(_PROMPT_QUIET_S)
+                if not extra:
+                    return buf.decode("utf-8", errors="replace")
+                buf.extend(extra)
+            else:
+                chunk = self._ser.read(64)
+                if not chunk:
+                    continue
+                buf.extend(chunk)
             if len(buf) > _CLI_MAX_BYTES:
                 raise RuntimeError(
                     f"CLI response exceeded {_CLI_MAX_BYTES // 1024} KB — "
                     "possible runaway output or wrong baud rate"
                 )
-            if buf.endswith(b"# "):
-                return buf.decode("utf-8", errors="replace")
 
         tail = bytes(buf[-300:])
         raise TimeoutError(
@@ -393,6 +435,9 @@ class SerialConnection:
         """
         if self.mode != "CLI":
             raise ConnectionError("Not in CLI mode. Call enter_cli() first.")
+        # Drop any stale bytes (e.g. the unread remainder of an earlier short or
+        # aborted read) so they can't prepend to this command's response.
+        self._ser.reset_input_buffer()
         self._ser.write((cmd + "\r").encode("ascii"))
         raw = self._read_until_prompt(timeout=timeout)
         return strip_cli_response(cmd, raw)

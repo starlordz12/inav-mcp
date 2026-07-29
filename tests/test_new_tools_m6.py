@@ -11,6 +11,7 @@ from inav_mcp.msp import firmware_major, encode_motor_values, MSP_SET_MOTOR, MSP
 from inav_mcp.cli import parse_get_output
 from inav_mcp.troubleshoot import firmware_calibration_status
 from inav_mcp.safety import next_backup_path
+from fake_conn import DisarmedStatus
 
 
 # ── firmware version guard ─────────────────────────────────────────────────────
@@ -69,8 +70,9 @@ def test_parse_get_output():
 
 # ── motor test gating (FakeConn records MSP sends) ──────────────────────────────
 
-class FakeMotorConn:
-    """Records send_msp_v1 calls. No send_msp_v2 → check_not_armed passes (best-effort)."""
+class FakeMotorConn(DisarmedStatus):
+    """Records send_msp_v1 calls. Reports DISARMED so the armed guard (which fails
+    closed) lets the motor/calibration path run — these tests gate on props-off."""
     def __init__(self):
         self.sent = []   # (cmd, payload)
     def is_open(self):

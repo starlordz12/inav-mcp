@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from inav_mcp import state, server
 from inav_mcp.cli import is_replayable
 from inav_mcp.connection import SerialConnection
-from tests.fake_serial import FakeSerial
+from fake_serial import FakeSerial
 
 
 # Separators and control characters that must never reach the wire.

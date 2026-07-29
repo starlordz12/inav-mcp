@@ -13,27 +13,15 @@ batch) before any serial I/O — `cli_batch()` already does.
 Every cli() test here uses a connection that positively reports DISARMED, so a
 refusal can only come from command classification (not from the S1 armed guard).
 """
-import sys, os, struct
+import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inav_mcp import state, server
 from inav_mcp.cli import is_write_command, is_session_control_command
-from inav_mcp.msp import MSPV2_INAV_STATUS, SENSOR_BITS
+from fake_conn import DisarmedStatus
 
 
-def _v2_disarmed():
-    return (
-        struct.pack("<H", 200)
-        + struct.pack("<H", 0)
-        + struct.pack("<H", SENSOR_BITS["acc"])
-        + struct.pack("<H", 10)
-        + bytes([0])
-        + struct.pack("<I", 0)      # armingFlags = 0 → disarmed
-        + bytes([0])
-    )
-
-
-class DisarmedConn:
+class DisarmedConn(DisarmedStatus):
     """Answers the armed guard truthfully (disarmed) and records CLI activity."""
     def __init__(self, reply=""):
         self._reply = reply
@@ -43,10 +31,6 @@ class DisarmedConn:
 
     def is_open(self):
         return True
-
-    def send_msp_v2(self, cmd, payload=b"", timeout=2.0):
-        assert cmd == MSPV2_INAV_STATUS
-        return _v2_disarmed()
 
     def send_msp_v1(self, cmd, payload=b"", timeout=2.0):
         raise AssertionError("v1 status must not be read when v2 answers")

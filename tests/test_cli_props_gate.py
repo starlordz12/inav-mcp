@@ -12,13 +12,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inav_mcp import state, server
 from inav_mcp.cli import is_actuator_command
+from fake_conn import DisarmedStatus
 
 
-class FakeConn:
+class FakeConn(DisarmedStatus):
     """Records whether CLI was entered and what save= exit_cli received.
 
-    Deliberately has NO send_msp_* methods → check_not_armed reads nothing and
-    passes (best-effort), matching real behaviour when status can't be read.
+    Reports DISARMED, so a refusal here can only come from the props-off gate —
+    the armed guard fails closed and would otherwise refuse on its own.
     """
     def __init__(self, reply="motor 0 set to 1500"):
         self._reply = reply

@@ -7,10 +7,15 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inav_mcp import state, server
+from fake_conn import DisarmedStatus
 
 
-class FakeConn:
-    """Minimal connection that records exit_cli(save=...) and returns a canned reply."""
+class FakeConn(DisarmedStatus):
+    """Minimal connection that records exit_cli(save=...) and returns a canned reply.
+
+    Reports DISARMED so the armed guard (which fails closed) lets the write
+    through — these tests are about save/reject behaviour, not about arming.
+    """
     def __init__(self, reply):
         self._reply = reply
         self.exit_saved = None      # what save= was passed to exit_cli

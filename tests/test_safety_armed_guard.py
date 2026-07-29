@@ -236,12 +236,18 @@ def test_cli_write_does_no_serial_io_when_unverifiable():
 
 
 def test_cli_batch_does_no_serial_io_when_unverifiable():
+    # cli_batch() lets the guard raise instead of returning an error dict (as
+    # _apply_cli_writes and save_and_reboot also do). Either surface is a clear
+    # safety error; what must hold is that no serial I/O happened.
     conn = RecordingConn()
-    out = _with_conn(conn, lambda: server.cli_batch(["set failsafe_delay = 5"],
-                                                    confirm_for_writes=True))
+    try:
+        out = _with_conn(conn, lambda: server.cli_batch(["set failsafe_delay = 5"],
+                                                        confirm_for_writes=True))
+    except RuntimeError as exc:
+        out = str(exc)
     assert conn.entered is False, "must refuse BEFORE entering CLI"
     assert conn.cli_commands == []
-    assert "SAFETY" in str(out) or "error" in out
+    assert "Unable to verify" in str(out)
 
 
 def test_motor_tool_sends_no_motor_command_when_unverifiable():

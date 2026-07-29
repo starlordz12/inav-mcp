@@ -25,15 +25,28 @@ def require_connected(conn: "SerialConnection | None") -> "SerialConnection":
 
 
 def check_not_armed(conn: "SerialConnection") -> None:
-    """Raise if the FC is armed.
+    """Raise unless the FC is positively confirmed DISARMED.
 
     iNAV encodes ARMED as bit 2 (value 4) of the combined armingFlags field —
     the same bit the Configurator checks (ARMED:4). We read it from
     MSPV2_INAV_STATUS (the iNAV 9.x source of truth), falling back to the legacy
     MSP_STATUS layout on older firmware.
 
-    If the read fails (e.g., stuck in CLI mode) we let it pass rather than
-    hard-blocking — the armed guard is best-effort for bench use.
+    FAIL CLOSED. There are three outcomes, not two:
+      - a status read reports DISARMED          → return (caller proceeds),
+      - a status read reports ARMED             → raise,
+      - no read establishes either              → raise.
+
+    The third case previously returned cleanly, so a caller drove motors and
+    wrote config without ever knowing the armed state. A missing, truncated, or
+    unanswered status read is not evidence of a disarmed board.
+
+    Note both parsers OMIT 'arming_disable_flags' when the payload is too short
+    to carry it, so presence of the key — not its truthiness — is what marks a
+    successful determination: 0 is a perfectly good "disarmed" answer.
+
+    Every caller reads status over MSP *before* entering CLI, so this never has
+    to contend with a CLI-mode connection.
     """
     from .msp import (
         MSPV2_INAV_STATUS, MSP_STATUS,
@@ -42,24 +55,33 @@ def check_not_armed(conn: "SerialConnection") -> None:
     )
 
     arming_flags = None
+
     # Prefer MSP v2 (authoritative on current firmware).
     try:
         status = parse_inav_status(conn.send_msp_v2(MSPV2_INAV_STATUS, timeout=2.0))
-        if status:
-            arming_flags = status.get("arming_disable_flags")
+        if "arming_disable_flags" in status:
+            arming_flags = status["arming_disable_flags"]
     except Exception:
         pass
 
-    # Fall back to legacy v1 layout.
+    # Fall back to the legacy v1 layout (older firmware, or no v2 support).
     if arming_flags is None:
         try:
-            arming_flags = parse_status(
-                conn.send_msp_v1(MSP_STATUS, timeout=2.0)
-            ).get("arming_disable_flags")
+            status = parse_status(conn.send_msp_v1(MSP_STATUS, timeout=2.0))
+            if "arming_disable_flags" in status:
+                arming_flags = status["arming_disable_flags"]
         except Exception:
-            return   # can't read — don't block
+            pass
 
-    if arming_flags and (arming_flags & ARMING_FLAG_ARMED):
+    if arming_flags is None:
+        raise RuntimeError(
+            "Unable to verify that the FC is disarmed; refusing a safety-sensitive "
+            "operation. Neither MSPV2_INAV_STATUS nor legacy MSP_STATUS returned a "
+            "readable armingFlags field. Reconnect (the link may be down, or the FC "
+            "left in CLI mode by an interrupted session) and retry."
+        )
+
+    if arming_flags & ARMING_FLAG_ARMED:
         raise RuntimeError(
             "FC is ARMED (ARMED bit set in armingFlags). "
             "DISARM before making configuration changes."

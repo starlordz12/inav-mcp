@@ -38,3 +38,6 @@ hwtest.py
 # MCP Registry publisher CLI (downloaded tool, not source)
 mcp-publisher.exe
 mcp-publisher.tar.gz
+
+# Local machine-generated analysis artifacts (not for the public repo)
+analysis/

@@ -9,28 +9,17 @@ separately; set `ran` only when a pulse succeeded, `stopped` only when a stop wa
 acknowledged; and when no stop is acknowledged, say so prominently. Repeated stop
 attempts in `finally` and the original transmission error must both be preserved.
 """
-import sys, os, struct
+import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inav_mcp import state, server
-from inav_mcp.msp import MSPV2_INAV_STATUS, MSP_SET_MOTOR, SENSOR_BITS
+from inav_mcp.msp import MSP_SET_MOTOR
+from fake_conn import DisarmedStatus
 
 STOP_PAYLOAD = server.encode_motor_values([1000] * server.MAX_SUPPORTED_MOTORS)
 
 
-def _v2_disarmed():
-    return (
-        struct.pack("<H", 200)
-        + struct.pack("<H", 0)
-        + struct.pack("<H", SENSOR_BITS["acc"])
-        + struct.pack("<H", 10)
-        + bytes([0])
-        + struct.pack("<I", 0)      # armingFlags = 0 → disarmed
-        + bytes([0])
-    )
-
-
-class MotorConn:
+class MotorConn(DisarmedStatus):
     """Scriptable motor link.
 
     `pulse_script` / `stop_script` are lists of True (acknowledged) / False
@@ -46,10 +35,6 @@ class MotorConn:
 
     def is_open(self):
         return True
-
-    def send_msp_v2(self, cmd, payload=b"", timeout=2.0):
-        assert cmd == MSPV2_INAV_STATUS
-        return _v2_disarmed()
 
     def _next(self, script):
         return script.pop(0) if len(script) > 1 else script[0]

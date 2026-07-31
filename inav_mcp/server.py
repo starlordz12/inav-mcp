@@ -18,6 +18,8 @@ from . import state
 from .cli import (
     is_write_command, is_actuator_command, is_session_control_command,
     cli_error, is_replayable, parse_get_output,
+    validate_cli_command, validate_enum_value, FAILSAFE_PROCEDURES,
+    GPS_PROVIDERS, GPS_SBAS_MODES, RTH_LANDING_POLICIES,
 )
 from .connection import SerialConnection
 from .msp import (
@@ -513,8 +515,39 @@ def cli(command: str, confirm_for_writes: bool = False, props_removed: bool = Fa
                              physically removing all propellers from the aircraft.
     """
     conn = state.require_connection()
+
+    # Validate BEFORE any serial I/O, not just inside run_cli(). Otherwise a
+    # malformed command (a stray control character, an injected separator)
+    # still forces a real enter_cli() — CLI-mode-entry plus the reboot that
+    # follows on exit — before ever being rejected, purely from bad input.
+    # run_cli() re-validates as a second, independent line of defence for any
+    # caller that reaches it directly.
+    try:
+        validate_cli_command(command)
+    except ValueError as exc:
+        return f"⚠ SAFETY: {exc}"
+
     is_write    = is_write_command(command)
     is_actuator = is_actuator_command(command)
+
+    # Session-control verbs (save/exit/batch) are refused unconditionally,
+    # BEFORE any serial I/O and regardless of confirm_for_writes — cli() owns a
+    # single enter_cli()/run_cli()/exit_cli() session and decides save/exit
+    # itself (mirrors the same guard in cli_batch()). Letting one of these
+    # through as a raw pass-through command would let a caller exit or save
+    # mid-session (or start/end a nested batch) outside of that bookkeeping —
+    # e.g. cli("exit") would end the CLI session cli() itself just opened, or
+    # cli("save", confirm_for_writes=True) would commit a save disconnected
+    # from whether any actual write it ran here succeeded.
+    if is_session_control_command(command):
+        return (
+            f"⚠ SAFETY: '{command}' is a CLI session-control command "
+            "(save/exit/batch) that cli() manages itself — refusing to run it "
+            "as a raw command. cli() already saves automatically after a "
+            "successful write and always exits/reconnects for you; use the "
+            "dedicated write tools or cli_batch() for multi-command sessions "
+            "instead of sending save/exit/batch directly."
+        )
 
     # Props-off safety gate: a live motor command can spin a propeller. This gate
     # is independent of confirm_for_writes — the generic write-confirm must NOT
@@ -545,17 +578,27 @@ def cli(command: str, confirm_for_writes: bool = False, props_removed: bool = Fa
             return f"⚠ SAFETY: {exc}"
 
     conn.enter_cli()
+    output = None
     error = None
+    exc_raised: Exception | None = None
     try:
         output = conn.run_cli(command)
         error = cli_error(output)   # iNAV rejects silently (no exception) — detect '### ERROR'
+    except Exception as exc:
+        exc_raised = exc
     finally:
-        # Persist ONLY a successful, non-actuator write. A live motor test is
-        # momentary and must never be saved; reads never save; a rejected write
-        # changed nothing. Either path reboots the FC; we reconnect.
-        save = is_write and not is_actuator and error is None
+        # Persist ONLY a successful, non-actuator write with no exception. A
+        # live motor test is momentary and must never be saved; reads never
+        # save; a rejected write changed nothing; an exception here means
+        # run_cli() never confirmed a completed write, so its outcome is
+        # unknown and must NOT be treated as "no error" — `error is None`
+        # alone is not evidence of success, only `error is None and no
+        # exception was raised` is. Either path reboots the FC; we reconnect.
+        save = is_write and not is_actuator and error is None and exc_raised is None
         conn.exit_cli(save=save, reconnect=True)
 
+    if exc_raised is not None:
+        return f"⚠ SAFETY: command failed ({exc_raised}) — nothing was saved."
     if error:
         return f"{output}\n\n[⚠ command REJECTED by FC — nothing saved]"
     if is_actuator:
@@ -624,6 +667,28 @@ def cli_batch(commands: list[str], confirm_for_writes: bool = False) -> dict:
             "rejected_commands": session_control,
         }
 
+    # Validate every command's TEXT before any serial I/O, not just inside
+    # run_cli() once the session is already open. Otherwise a malformed
+    # command later in the list still forces a real enter_cli() — CLI-mode
+    # entry plus the reboot that follows on exit — before that command is
+    # ever reached and rejected. run_cli() re-validates as a second,
+    # independent line of defence.
+    invalid = []
+    for c in cmds:
+        try:
+            validate_cli_command(c)
+        except ValueError as exc:
+            invalid.append({"command": c, "error": str(exc)})
+    if invalid:
+        return {
+            "error": (
+                f"{len(invalid)} command(s) failed validation — the WHOLE batch was "
+                "refused before any serial I/O; nothing was sent to the FC."
+            ),
+            "rejected_commands": [i["command"] for i in invalid],
+            "validation_errors": invalid,
+        }
+
     writes    = [c for c in cmds if is_write_command(c)]
     has_write = bool(writes)
 
@@ -650,6 +715,7 @@ def cli_batch(commands: list[str], confirm_for_writes: bool = False) -> dict:
     rejected: list[str]  = []
     reboot_seconds: float | None = None
     completed = False
+    exc_raised: Exception | None = None
     try:
         if has_write:
             before = conn.run_cli("diff all", timeout=20.0)
@@ -661,12 +727,24 @@ def cli_batch(commands: list[str], confirm_for_writes: bool = False) -> dict:
                 rejected.append(cmd)
             results.append({"command": cmd, "output": out, "rejected": bool(err)})
         completed = True
+    except Exception as exc:
+        exc_raised = exc
     finally:
         # Save only a fully-successful write batch: every command ran AND none was
-        # rejected. Reads never save; any rejection or mid-session error discards
-        # the whole batch (all-or-nothing). Either path reboots once; we reconnect.
+        # rejected AND nothing raised mid-session. Reads never save; any rejection,
+        # exception, or mid-session error discards the whole batch (all-or-nothing).
+        # Either path reboots once; we reconnect.
         save = has_write and completed and not rejected
         reboot_seconds = conn.exit_cli(save=save, reconnect=True)
+
+    if exc_raised is not None:
+        return {
+            "error": f"Batch aborted mid-session ({exc_raised}). Nothing was saved.",
+            "results": results,
+            "saved": False,
+            "rebooted": True,
+            "reboot_seconds": round(reboot_seconds, 1) if reboot_seconds else None,
+        }
 
     if has_write and rejected:
         note = (
@@ -1646,7 +1724,11 @@ def set_failsafe(
 
     commands: list[str] = []
     if procedure is not None:
-        commands.append(f"set failsafe_procedure = {procedure.strip().upper()}")
+        try:
+            proc = validate_enum_value(procedure, FAILSAFE_PROCEDURES, "failsafe procedure")
+        except ValueError as e:
+            return {"error": str(e)}
+        commands.append(f"set failsafe_procedure = {proc}")
     if throttle_us is not None:
         commands.append(f"set failsafe_throttle = {max(1000, min(2000, int(throttle_us)))}")
     if delay_s is not None:
@@ -1767,9 +1849,17 @@ def configure_gps(provider: str = "UBLOX", sbas: str | None = None, confirm: boo
     acquire satellites and check read_gps().
     """
     conn = state.require_connection()
-    commands = ["feature GPS", f"set gps_provider = {provider.strip().upper()}"]
+    try:
+        prov = validate_enum_value(provider, GPS_PROVIDERS, "GPS provider")
+    except ValueError as e:
+        return {"error": str(e)}
+    commands = ["feature GPS", f"set gps_provider = {prov}"]
     if sbas is not None:
-        commands.append(f"set gps_sbas_mode = {sbas.strip().upper()}")
+        try:
+            sb = validate_enum_value(sbas, GPS_SBAS_MODES, "SBAS mode")
+        except ValueError as e:
+            return {"error": str(e)}
+        commands.append(f"set gps_sbas_mode = {sb}")
 
     if not confirm:
         return {
@@ -1808,7 +1898,13 @@ def set_nav(
     if rth_climb_first is not None:
         commands.append(f"set nav_rth_climb_first = {'ON' if rth_climb_first else 'OFF'}")
     if rth_allow_landing is not None:
-        commands.append(f"set nav_rth_allow_landing = {rth_allow_landing.strip().upper()}")
+        try:
+            landing = validate_enum_value(
+                rth_allow_landing, RTH_LANDING_POLICIES, "RTH landing policy"
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+        commands.append(f"set nav_rth_allow_landing = {landing}")
     if loiter_radius_m is not None:
         commands.append(f"set nav_fw_loiter_radius = {max(0, int(round(loiter_radius_m * 100)))}")
 

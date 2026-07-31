@@ -125,8 +125,11 @@ def test_write_detection_motor():
 
 
 def test_read_commands_not_flagged():
+    # 'exit' is deliberately excluded here (S2): it always ends the CLI session
+    # (and iNAV always reboots on CLI exit), so it is classified as a write —
+    # see tests/test_cli_unknown_unsafe.py::test_exit_is_not_classified_read_only.
     for cmd in ["diff all", "diff", "get motor_poles", "status", "tasks",
-                "dump", "dump all", "help", "version", "exit"]:
+                "dump", "dump all", "help", "version"]:
         assert is_write_command(cmd) is False, f"Wrongly flagged as write: {cmd!r}"
 
 

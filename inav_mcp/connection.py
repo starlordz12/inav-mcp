@@ -9,7 +9,7 @@ import time
 import serial
 
 from .msp import encode_v1, decode_v1_response, encode_v2, decode_v2_response
-from .cli import strip_cli_response
+from .cli import strip_cli_response, validate_cli_command
 
 # Max bytes we'll buffer while waiting for the CLI prompt before giving up.
 _CLI_MAX_BYTES = 128 * 1024  # 128 KB is plenty for a full `dump all`
@@ -435,6 +435,10 @@ class SerialConnection:
         """
         if self.mode != "CLI":
             raise ConnectionError("Not in CLI mode. Call enter_cli() first.")
+        # Central injection guard (S3): must run before ANY serial I/O — a
+        # rejected command must not touch the wire at all, not even a stale-byte
+        # flush. See inav_mcp.cli.validate_cli_command for what this rejects.
+        validate_cli_command(cmd)
         # Drop any stale bytes (e.g. the unread remainder of an earlier short or
         # aborted read) so they can't prepend to this command's response.
         self._ser.reset_input_buffer()

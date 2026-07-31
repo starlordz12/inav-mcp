@@ -165,6 +165,69 @@ def test_write_batch_refused_while_armed():
     assert conn.entered is False, "must refuse before entering CLI"
 
 
+# ── every command validated before any serial I/O; a mid-session exception never saves ──
+
+def test_invalid_command_in_batch_rejected_before_entering_cli():
+    # A control character anywhere in the list must be caught before
+    # enter_cli() ever runs — otherwise a bad command later in the list still
+    # forces a real CLI-mode-entry (and the reboot that follows on exit)
+    # before that specific command is ever reached inside the loop.
+    conn, out = _run(["get status", "set foo = 1\rsave"], confirm_for_writes=True)
+    assert conn.entered is False, "must be rejected before any serial I/O"
+    assert "error" in out
+    assert "set foo = 1\rsave" in out["rejected_commands"]
+
+
+class RaisingBatchConn:
+    """A connection whose run_cli() raises partway through a batch — models a
+    timeout or any other mid-session failure that isn't a rejected command."""
+    def __init__(self, fail_on_call, exc):
+        self.entered = False
+        self.exit_saved = None
+        self.exit_reconnect = None
+        self._calls = 0
+        self._fail_on_call = fail_on_call
+        self._exc = exc
+
+    def is_open(self):
+        return True
+
+    def enter_cli(self, timeout=5.0):
+        self.entered = True
+        return "Entering CLI Mode..."
+
+    def run_cli(self, command, timeout=15.0):
+        self._calls += 1
+        if self._calls == self._fail_on_call:
+            raise self._exc
+        return "ok"
+
+    def exit_cli(self, save=False, reconnect=False):
+        self.exit_saved = save
+        self.exit_reconnect = reconnect
+        return 6.5
+
+
+def test_batch_mid_session_exception_does_not_save_and_does_not_escape():
+    conn = RaisingBatchConn(fail_on_call=1, exc=TimeoutError("link dropped"))
+    state.set_connection(conn)
+    orig_backup = server._write_backup_file
+    server._write_backup_file = lambda diff, label: {"backup_path": f"/tmp/{label}.txt"}
+    orig_armed = server.check_not_armed
+    server.check_not_armed = lambda _c: None
+    try:
+        # Must return a normal dict, not raise — an uncaught exception here
+        # would escape the MCP tool call instead of a clean rejection.
+        out = server.cli_batch(["set foo = 1"], confirm_for_writes=True)
+    finally:
+        server._write_backup_file = orig_backup
+        server.check_not_armed = orig_armed
+        state.set_connection(None)
+    assert conn.exit_saved is False, "an exception mid-session must never save"
+    assert "error" in out
+    assert "link dropped" in out["error"]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     passed = 0

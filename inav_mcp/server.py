@@ -1508,7 +1508,8 @@ def test_motor(
                      "aircraft, then call test_motor(..., props_removed=True, confirm=True).",
         }
 
-    # Armed guard (best-effort).
+    # Armed guard — fail-closed (check_not_armed() refuses if the armed state
+    # can't be positively confirmed disarmed, not just when it reads armed).
     try:
         check_not_armed(conn)
     except RuntimeError as exc:
@@ -1544,23 +1545,41 @@ def test_motor(
     except Exception as exc:
         err = str(exc)
     finally:
-        # ALWAYS command stop, regardless of what happened above.
+        # ALWAYS attempt stop 3 times, regardless of what happened above — but
+        # count an ACKNOWLEDGEMENT separately from an ATTEMPT. A caller must be
+        # able to tell "the FC confirmed the motor stopped" from "we sent three
+        # stop frames into a dead link and have no idea", since the difference
+        # is whether to tell them to cut power.
+        stop_acknowledged = False
         for _ in range(3):
             try:
                 conn.send_msp_v1(MSP_SET_MOTOR, stop_payload, timeout=1.0)
+                stop_acknowledged = True
             except Exception:
                 pass
 
+    # `ran` reflects whether the motor was actually commanded at all — not
+    # "did the function reach this line" — so a link that dies before the
+    # first pulse is acknowledged is reported honestly as never having run.
+    ran = pulses >= 1
+    if stop_acknowledged:
+        stop_note = "Motor commanded back to stop (1000 µs) and a stop was acknowledged."
+    else:
+        stop_note = (
+            "⚠ NO STOP WAS ACKNOWLEDGED after 3 attempts — the motor may still be "
+            "spinning. CUT POWER to the aircraft immediately (disconnect the battery)."
+        )
+
     return {
-        "ran": True,
+        "ran": ran,
         "motor": motor,
         "throttle_us": throttle,
         "duration_s": duration,
         "pulses_sent": pulses,
-        "stopped": True,
+        "stopped": stop_acknowledged,
         "error": err,
         "note": (
-            "Motor commanded back to stop (1000 µs). If anything kept spinning, cut power. "
+            f"{stop_note} "
             "Live bench test — nothing was saved. NOTE: iNAV servos have no live CLI/MSP "
             "override, so there is no test_servo — verify control surfaces by moving the TX "
             "sticks and watching read_rc_channels(), or use the Configurator Servos tab."

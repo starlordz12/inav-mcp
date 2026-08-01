@@ -4,13 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inav-mcp"
-version = "0.3.4"
+version = "0.3.5"
 description = "MCP server for configuring and diagnosing iNAV flying-wing (and fixed-wing) flight controllers"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0",
+    # Upper-bounded below 2.0: inav_mcp/server.py imports the FastMCP 1.x
+    # path (`mcp.server.fastmcp.FastMCP`), which is only verified against
+    # the mcp 1.x series. An unbounded floor let `pip install inav-mcp`
+    # silently resolve mcp 2.0.0 (released 2026-07-29, restructured package,
+    # dropped this import path) with no warning — the installed 0.3.4 on
+    # PyPI is broken for anyone installing fresh right now. Bump the
+    # ceiling deliberately after testing against a new major.
+    "mcp>=1.0,<2.0",
     "pyserial>=3.5",
 ]
 

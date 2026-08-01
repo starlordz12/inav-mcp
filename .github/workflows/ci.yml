@@ -28,5 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Verify mcp resolved to a compatible, importable version
+        run: |
+          python -c "from mcp.server.fastmcp import FastMCP; import importlib.metadata as m; print('mcp version:', m.version('mcp'))"
+
       - name: Run test suite (offline — no FC needed)
         run: pytest

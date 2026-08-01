@@ -468,6 +468,32 @@ def restore_config(path: str, confirm: bool = False) -> dict:
             if ln.strip() and not ln.strip().startswith("#") and is_replayable(ln)
         ]
 
+    # Pre-flight safety gate (AUDIT R3): reject the WHOLE restore, before any
+    # serial I/O, if the file contains a live actuator command such as
+    # 'motor 1 2000'. Replaying a backup is not a bench test -- there is no
+    # props-removed prompt in this path -- so a motor line must never reach
+    # _apply_cli_writes. Same classifier cli()/cli_batch() already use to gate
+    # live motor output; checked here on every replayable line, not just when
+    # confirm=True, so a dry run surfaces the danger too instead of reporting
+    # a falsely reassuring command count.
+    actuator_lines = [ln for ln in lines if is_actuator_command(ln)]
+    if actuator_lines:
+        plural = "" if len(actuator_lines) == 1 else "s"
+        quoted = ", ".join(f"'{ln}'" for ln in actuator_lines)
+        return {
+            "restored": False,
+            "error": (
+                f"Restore refused: {len(actuator_lines)} live actuator command{plural} "
+                f"found in '{path}': {quoted}. A backup replay has no props-removed "
+                "gate, so a 'motor ...' line would spin the motor with no confirmation. "
+                "Nothing was sent to the FC. Remove the offending line(s) from the "
+                "file, or run them deliberately via cli(command, props_removed=True) "
+                "/ test_motor() after removing all propellers."
+            ),
+            "rejected_lines": actuator_lines,
+            "backup_path": path,
+        }
+
     if not confirm:
         return {
             "restored": False,

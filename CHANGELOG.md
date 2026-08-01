@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-31
+
+Dependency hotfix. `pyproject.toml` declared `mcp>=1.0` with no upper bound;
+`mcp` 2.0.0 (released 2026-07-29, restructured package) broke the FastMCP 1.x
+import path this server hard-depends on, so a fresh `pip install inav-mcp`
+resolved an incompatible `mcp` major with no warning — the published 0.3.4
+was broken for a clean install. Constrained to `mcp>=1.0,<2.0`, matching what
+this server is actually tested against, and CI now verifies the resolved
+`mcp` version imports before running the test suite so a future incompatible
+major fails loudly instead of surfacing downstream. No code, tool, or
+behaviour changes (still 35 tools, 186 offline tests).
+
+### Fixed
+- Constrain the `mcp` dependency to `<2.0` so `pip install inav-mcp` doesn't
+  silently resolve a future major that breaks the FastMCP import path.
+
 ## [0.3.4] - 2026-06-25
 
 Positioning / docs release — makes explicit that this server is built **primarily

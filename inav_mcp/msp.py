@@ -261,13 +261,23 @@ def parse_inav_status(payload: bytes) -> dict:
     """MSPV2_INAV_STATUS (0x2000): the authoritative status/arming source for iNAV 9.x.
 
     Layout (from iNAV Configurator 9.0.2 — the only status command it parses):
-      0-1   cycleTime       uint16
-      2-3   i2cErrors       uint16
-      4-5   activeSensors   uint16   ← sensor presence bits (SENSOR_BITS)
-      6-7   cpuLoad         uint16
-      8     packed profile  uint8    (profile = low nibble, battery = high nibble)
-      9-12  armingFlags     uint32   ← ARMED (bit2) + disable reasons (bits 6..30)
-      13    mixer profile   uint8    (low nibble)
+      0-1     cycleTime       uint16
+      2-3     i2cErrors       uint16
+      4-5     activeSensors   uint16   ← sensor presence bits (SENSOR_BITS)
+      6-7     cpuLoad         uint16
+      8       packed profile  uint8    (profile = low nibble, battery = high nibble)
+      9-12    armingFlags     uint32   ← ARMED (bit2) + disable reasons (bits 6..30)
+      13..N-1 (unknown)       —        may be absent; not decoded here (see below)
+      N-1     mixer profile   uint8    (low nibble) — the TRAILING byte of the
+                                        message, whatever its length
+
+    The Configurator's own 8.0.1 reference parser reads the mixer profile from the
+    last byte of the (variable-length) message, not a fixed offset — some
+    firmware builds/versions insert extra fields between armingFlags and the
+    trailing mixer-profile byte, which pushes that byte's position beyond 13.
+    Whatever bytes may exist between armingFlags (ending at offset 12) and the
+    trailing byte are NOT decoded here; doing so would require real captured
+    8.0.1 frames from hardware, which aren't available in this environment.
 
     Note: unlike legacy MSP_STATUS, this frame carries NO flightModeFlags — active
     modes come from MSP_MODE_RANGES / MSP_BOXIDS instead.
@@ -293,8 +303,8 @@ def parse_inav_status(payload: bytes) -> dict:
         "armed":                bool(arming & ARMING_FLAG_ARMED),
         "simulator_mode":       bool(arming & ARMING_FLAG_SIMULATOR_MODE),
     }
-    if len(payload) >= 14:
-        result["mixer_profile"] = payload[13] & 0x0F
+    if len(payload) > 13:
+        result["mixer_profile"] = payload[-1] & 0x0F
     return result
 
 

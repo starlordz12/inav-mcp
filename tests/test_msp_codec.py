@@ -206,6 +206,34 @@ def test_parse_inav_status_short_payload():
     assert parse_inav_status(b"\x00\x01\x02") == {}
 
 
+def test_parse_inav_status_mixer_profile_is_exactly_14_bytes():
+    # The canonical 14-byte frame: byte 13 IS the last byte, so both the old
+    # fixed-offset read and the new trailing-byte read must agree.
+    payload = _make_inav_status(mixer_profile=3)
+    assert len(payload) == 14
+    s = parse_inav_status(payload)
+    assert s["mixer_profile"] == 3
+
+
+def test_parse_inav_status_mixer_profile_reads_trailing_byte_not_fixed_offset():
+    # Regression test for the fixed-byte-13 bug: build a payload LONGER than 14
+    # bytes (as some 8.0.1 firmware builds send, per the Configurator's own
+    # variable-length parser) with a DIFFERENT value planted at byte 13 than at
+    # the real trailing byte. The parser must return the trailing byte's value,
+    # never the stale byte-13 value.
+    base = _make_inav_status(mixer_profile=0)[:13]   # everything through armingFlags
+    decoy_byte_13 = bytes([0x09])                     # what the old code would read
+    filler = b"\xAA" * 5                               # unknown extra fields
+    real_mixer_profile_byte = bytes([0x05])            # what the new code must read
+    payload = base + decoy_byte_13 + filler + real_mixer_profile_byte
+    assert len(payload) == 20
+    assert payload[13] == 0x09
+    assert payload[-1] == 0x05
+
+    s = parse_inav_status(payload)
+    assert s["mixer_profile"] == 0x05
+
+
 def test_disable_reason_mask_excludes_state_bits():
     # State bits (ARMED=2, SIMULATOR=4) must NOT be in the disable-reason mask.
     assert ARMING_FLAG_ARMED & ARMING_DISABLE_REASON_MASK == 0

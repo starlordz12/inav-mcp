@@ -6,12 +6,12 @@
     "url": "https://github.com/starlordz12/inav-mcp",
     "source": "github"
   },
-  "version": "0.3.2",
+  "version": "1.0.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "inav-mcp",
-      "version": "0.3.2",
+      "version": "1.0.0",
       "transport": { "type": "stdio" }
     }
   ]

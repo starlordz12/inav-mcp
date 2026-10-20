@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-20
+
+First stable release. The tool surface and safety model are now considered
+stable, and the project follows Semantic Versioning from here — breaking changes
+to tool names or signatures will bump the major version.
+
+No change to runtime behaviour since 0.3.5: still **35 tools** backed by a real
+serial/MSP/CLI connection to the flight controller, and **186 offline tests**
+(no hardware required to verify the build). This release adds
+adoption-focused documentation.
+
+### Added
+- **README roadmap & call-to-action:** a "Roadmap" section noting that more tools
+  are actively in development and inviting tool requests, plus a "Contributing &
+  feedback" section (star / open an issue / submit PRs against the fully-offline
+  test suite).
+
+### Changed
+- Promoted to **1.0.0** to signal a stable, supported tool API. The CLI-first
+  write path, MSP-first reads, and the safety gates (props-off, armed-guard,
+  auto-backup, dry-run, read-back verify) are the committed public contract.
+- MCP Registry manifest (`server.json`) now tracks the current release.
+
+### Notes
+- Requires the `mcp` 1.x SDK (`mcp>=1.0,<2.0`); `mcp` 2.x renamed `FastMCP`
+  and is not yet supported.
+- Hardware-tested on iNAV 6.1.0 (SpeedyBee F405 Wing). Arming-flag decoding is
+  calibrated for iNAV 8.x/9.x and warns on other major versions; the raw flag
+  value is always reported.
+
 ## [0.3.5] - 2026-07-31
 
 Dependency hotfix. `pyproject.toml` declared `mcp>=1.0` with no upper bound;
@@ -198,7 +228,8 @@ Initial release — milestones M0–M5, hardware-verified against a SpeedyBee F4
   built-in MSP v1/v2 codec (no GPL runtime dependencies — MIT licensed).
 - 134 offline tests.
 
-[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/starlordz12/inav-mcp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/starlordz12/inav-mcp/compare/v0.3.5...v1.0.0
 [0.3.5]: https://github.com/starlordz12/inav-mcp/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/starlordz12/inav-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/starlordz12/inav-mcp/compare/v0.3.2...v0.3.3

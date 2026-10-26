@@ -7,18 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-10-20
+## [1.0.0] - 2026-10-26
 
 First stable release. The tool surface and safety model are now considered
 stable, and the project follows Semantic Versioning from here — breaking changes
 to tool names or signatures will bump the major version.
 
-No change to runtime behaviour since 0.3.5: still **35 tools** backed by a real
-serial/MSP/CLI connection to the flight controller, and **186 offline tests**
-(no hardware required to verify the build). This release adds
-adoption-focused documentation.
+Still **35 tools** backed by a real serial/MSP/CLI connection to the flight
+controller. This release closes the findings from an external safety review
+(see `AUDIT.md`) and grows the offline suite from 186 to **259 tests**,
+including the first coverage of the serial byte layer (no hardware required to
+verify the build). Several safety gates now **fail closed**, so a few calls that
+used to go through will now be refused; these are listed under *Fixed*.
+
+### Fixed
+- **Armed guard fails closed.** If neither `MSPV2_INAV_STATUS` nor `MSP_STATUS`
+  can establish the armed state, motor tests and config writes are now refused
+  instead of proceeding. A missing or truncated status read is no longer treated
+  as "disarmed".
+- **Unknown CLI commands need confirmation.** `cli()` used to treat any command
+  it didn't recognise as a read and run it with no confirmation, backup, or
+  armed check. It now uses a read-only allowlist, so anything unrecognised is
+  handled as a write. `exit` is no longer classed as read-only.
+- **CLI command injection.** Control characters in command text, or in the
+  constrained arguments of `set_failsafe`, `configure_gps` and `set_nav`, could
+  smuggle a second, unconfirmed command onto the wire. Command text is now
+  validated, and those arguments are checked against explicit allow-lists, all
+  before the FC is put into CLI mode. A rejected command no longer triggers a
+  CLI enter/exit/reboot cycle, and can no longer trigger an EEPROM save.
+- **`test_motor` reports the stop honestly.** It used to report `stopped=True`
+  even when none of the three stop commands was acknowledged. It now reports
+  what was actually acknowledged and leads with a cut-power warning when no stop
+  was confirmed.
+- **`restore_config` refuses backups that would spin a motor.** A backup file
+  containing a live actuator command (e.g. `motor 1 2000`) is now rejected in
+  full before any serial I/O, including on a dry run.
+- **Serial truncation.** CLI prompt detection now confirms a `# ` prompt with a
+  short quiet window, so comment lines in `diff`/`dump` output can't cut a
+  backup short. Stale input is flushed before each CLI command, and claimed
+  MSP v2 payload lengths are bounded.
+- **`mixer_profile` decoding** now reads the last byte of `MSPV2_INAV_STATUS`
+  (matching iNAV Configurator) instead of a fixed offset that was wrong for
+  longer frames. Display-only; no safety path uses it.
 
 ### Added
+- `AUDIT.md`: the technical review these fixes respond to (risks, missing tests,
+  roadmap).
 - **README roadmap & call-to-action:** a "Roadmap" section noting that more tools
   are actively in development and inviting tool requests, plus a "Contributing &
   feedback" section (star / open an issue / submit PRs against the fully-offline
